@@ -1,0 +1,174 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  USER
+  MODERATOR
+  ADMIN
+
+  @@map("role")
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+
+  @@map("user_status")
+}
+
+enum FollowStatus {
+  ACTIVE
+  PENDING
+
+  @@map("follow_status")
+}
+
+// ─── Identity ────────────────────────────────────────────────────────────────
+
+model User {
+  id              String     @id @default(uuid(7)) @db.Uuid
+  email           String     @unique
+  /// Stored lowercase so uniqueness is case-insensitive.
+  username        String     @unique @db.VarChar(30)
+  /// Null for accounts that only sign in with OAuth.
+  passwordHash    String?    @map("password_hash")
+  role            Role       @default(USER)
+  status          UserStatus @default(ACTIVE)
+  emailVerifiedAt DateTime?  @map("email_verified_at") @db.Timestamptz(3)
+  lastLoginAt     DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt       DateTime?  @map("deleted_at") @db.Timestamptz(3)
+
+  profile       Profile?
+  settings      UserSettings?
+  refreshTokens RefreshToken[]
+  oauthAccounts OAuthAccount[]
+
+  following Follow[] @relation("UserFollowing")
+  followers Follow[] @relation("UserFollowers")
+  blocking  Block[]  @relation("UserBlocking")
+  blockedBy Block[]  @relation("UserBlockedBy")
+  muting    Mute[]   @relation("UserMuting")
+  mutedBy   Mute[]   @relation("UserMutedBy")
+
+  @@map("users")
+}
+
+model Profile {
+  userId      String   @id @map("user_id") @db.Uuid
+  displayName String   @map("display_name") @db.VarChar(50)
+  bio         String?  @db.VarChar(160)
+  avatarUrl   String?  @map("avatar_url")
+  coverUrl    String?  @map("cover_url")
+  website     String?  @db.VarChar(200)
+  location    String?  @db.VarChar(100)
+  isPrivate   Boolean  @default(false) @map("is_private")
+  interests   String[] @default([])
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+model UserSettings {
+  userId            String   @id @map("user_id") @db.Uuid
+  notificationPrefs Json     @default("{}") @map("notification_prefs")
+  aiPrefs           Json     @default("{}") @map("ai_prefs")
+  locale            String   @default("en") @db.VarChar(10)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  tokenHash    String    @unique @map("token_hash")
+  /// All tokens from one login share a family; reuse of a revoked token revokes the family.
+  familyId     String    @map("family_id") @db.Uuid
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(3)
+  replacedById String?   @map("replaced_by_id") @db.Uuid
+  userAgent    String?   @map("user_agent")
+  ip           String?   @db.VarChar(45)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+model OAuthAccount {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  provider          String   @db.VarChar(30)
+  providerAccountId String   @map("provider_account_id")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("oauth_accounts")
+}
+
+// ─── Social graph ────────────────────────────────────────────────────────────
+
+model Follow {
+  followerId  String       @map("follower_id") @db.Uuid
+  followingId String       @map("following_id") @db.Uuid
+  status      FollowStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  follower  User @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@index([followingId, createdAt(sort: Desc)])
+  @@index([followerId, createdAt(sort: Desc)])
+  @@map("follows")
+}
+
+model Block {
+  userId       String   @map("user_id") @db.Uuid
+  targetUserId String   @map("target_user_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user       User @relation("UserBlocking", fields: [userId], references: [id], onDelete: Cascade)
+  targetUser User @relation("UserBlockedBy", fields: [targetUserId], references: [id], onDelete: Cascade)
+
+  @@id([userId, targetUserId])
+  @@index([targetUserId])
+  @@map("blocks")
+}
+
+model Mute {
+  userId       String   @map("user_id") @db.Uuid
+  targetUserId String   @map("target_user_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user       User @relation("UserMuting", fields: [userId], references: [id], onDelete: Cascade)
+  targetUser User @relation("UserMutedBy", fields: [targetUserId], references: [id], onDelete: Cascade)
+
+  @@id([userId, targetUserId])
+  @@index([targetUserId])
+  @@map("mutes")
+}
