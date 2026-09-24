@@ -2,13 +2,15 @@
   "name": "backend",
   "version": "0.1.0",
   "private": true,
-  "type": "commonjs",
+  "type": "module",
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon",
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
@@ -20,21 +22,34 @@
     "node": ">=24"
   },
   "dependencies": {
+    "@node-rs/argon2": "^2.2.1",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
+    "arctic": "^3.7.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^18.0.3",
     "express": "^5.2.1",
-    "pg": "^8.23.0"
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.3.0",
+    "jose": "^6.2.12",
+    "nodemailer": "^10.0.10",
+    "pg": "^8.23.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^24.13.6",
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.23.1",
+    "@types/supertest": "^7.2.1",
     "nodemon": "^3.1.14",
     "prisma": "^7.10.0",
+    "supertest": "^7.3.0",
     "tsx": "^4.23.15",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.1"
   }
 }
