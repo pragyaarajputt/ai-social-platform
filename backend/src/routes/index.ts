@@ -1,10 +1,13 @@
 import { Router } from "express";
 import { prisma } from "../config/database.js";
 import { authRouter } from "./auth.routes.js";
+import { integrationRouter, workspaceRouter } from "./workspace.routes.js";
 
 export const router = Router();
 
 router.use("/api/v1/auth", authRouter);
+router.use("/api/v1/workspaces", workspaceRouter);
+router.use("/api/v1/integrations", integrationRouter);
 
 router.get("/health", (_req, res) => {
   res.json({ status: "ok" });

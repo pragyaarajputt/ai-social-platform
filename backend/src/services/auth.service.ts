@@ -8,6 +8,7 @@ import { dummyVerify, hashPassword, verifyPassword } from "../utils/password.js"
 import { sendPasswordResetEmail, sendVerificationEmail } from "./email.service.js";
 import type { GoogleProfile } from "./google-oauth.service.js";
 import { consumeVerificationToken, createVerificationToken, revokeAllForUser } from "./token.service.js";
+import { personalWorkspaceMembership } from "./workspace.service.js";
 
 export interface PublicUser {
   id: string;
@@ -75,6 +76,7 @@ export async function register(input: RegisterInput): Promise<PublicUser> {
         passwordHash,
         profile: { create: { displayName: input.displayName } },
         settings: { create: {} },
+        memberships: personalWorkspaceMembership(input.displayName),
       },
       select: publicUserSelect,
     });
@@ -189,14 +191,16 @@ export async function loginWithGoogle(profile: GoogleProfile): Promise<PublicUse
 
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
+      const displayName = (profile.name ?? profile.email.split("@")[0] ?? "User").slice(0, 50);
       const user = await prisma.user.create({
         data: {
           email: profile.email,
           username: usernameFromEmail(profile.email),
           emailVerifiedAt: profile.emailVerified ? new Date() : null,
-          profile: { create: { displayName: (profile.name ?? profile.email.split("@")[0] ?? "User").slice(0, 50) } },
+          profile: { create: { displayName } },
           settings: { create: {} },
           oauthAccounts: { create: { provider: "google", providerAccountId: profile.sub } },
+          memberships: personalWorkspaceMembership(displayName),
         },
         select: publicUserSelect,
       });

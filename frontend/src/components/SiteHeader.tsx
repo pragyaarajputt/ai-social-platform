@@ -14,9 +14,17 @@ export function SiteHeader() {
         </Link>
         <div className="flex items-center gap-4 text-sm">
           {status === "authenticated" ? (
-            <Link href="/account" className="hover:underline">
-              @{user.username}
-            </Link>
+            <>
+              <Link href="/" className="hover:underline">
+                Dashboard
+              </Link>
+              <Link href="/accounts" className="hover:underline">
+                Accounts
+              </Link>
+              <Link href="/account" className="text-neutral-500 hover:underline">
+                @{user.username}
+              </Link>
+            </>
           ) : status === "unauthenticated" ? (
             <>
               <Link href="/login" className="hover:underline">

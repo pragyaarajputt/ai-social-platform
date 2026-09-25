@@ -26,18 +26,44 @@ enum UserStatus {
   @@map("user_status")
 }
 
-enum FollowStatus {
-  ACTIVE
-  PENDING
-
-  @@map("follow_status")
-}
-
 enum TokenType {
   EMAIL_VERIFY
   PASSWORD_RESET
 
   @@map("token_type")
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+
+  @@map("workspace_role")
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+  FACEBOOK
+  THREADS
+  LINKEDIN
+  X
+  YOUTUBE
+  TIKTOK
+
+  @@map("social_platform")
+}
+
+enum SocialAccountStatus {
+  ACTIVE
+  /// Token expired or was rejected; the user must reconnect.
+  NEEDS_REAUTH
+  /// The user removed our app on the platform (deauthorize callback).
+  REVOKED
+  /// Disconnected from our side; tokens deleted.
+  DISCONNECTED
+
+  @@map("social_account_status")
 }
 
 // ─── Identity ────────────────────────────────────────────────────────────────
@@ -63,12 +89,10 @@ model User {
   oauthAccounts      OAuthAccount[]
   verificationTokens VerificationToken[]
 
-  following Follow[] @relation("UserFollowing")
-  followers Follow[] @relation("UserFollowers")
-  blocking  Block[]  @relation("UserBlocking")
-  blockedBy Block[]  @relation("UserBlockedBy")
-  muting    Mute[]   @relation("UserMuting")
-  mutedBy   Mute[]   @relation("UserMutedBy")
+  memberships        WorkspaceMember[]
+  connectedAccounts  SocialAccount[]
+  auditLogs          AuditLog[]
+  oauthConnectStates OAuthConnectState[]
 
   @@map("users")
 }
@@ -76,13 +100,7 @@ model User {
 model Profile {
   userId      String   @id @map("user_id") @db.Uuid
   displayName String   @map("display_name") @db.VarChar(50)
-  bio         String?  @db.VarChar(160)
   avatarUrl   String?  @map("avatar_url")
-  coverUrl    String?  @map("cover_url")
-  website     String?  @db.VarChar(200)
-  location    String?  @db.VarChar(100)
-  isPrivate   Boolean  @default(false) @map("is_private")
-  interests   String[] @default([])
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -154,45 +172,124 @@ model VerificationToken {
   @@map("verification_tokens")
 }
 
-// ─── Social graph ────────────────────────────────────────────────────────────
+// ─── Workspaces ──────────────────────────────────────────────────────────────
 
-model Follow {
-  followerId  String       @map("follower_id") @db.Uuid
-  followingId String       @map("following_id") @db.Uuid
-  status      FollowStatus @default(ACTIVE)
-  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+/// Everything users create (connected accounts, posts, media) belongs to a workspace, not a user.
+model Workspace {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  name      String   @db.VarChar(80)
+  slug      String   @unique @db.VarChar(60)
+  /// IANA time zone, used for scheduling and calendar display.
+  timezone  String   @default("UTC") @db.VarChar(64)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  follower  User @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
-  following User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+  members        WorkspaceMember[]
+  socialAccounts SocialAccount[]
+  connectStates  OAuthConnectState[]
+  auditLogs      AuditLog[]
 
-  @@id([followerId, followingId])
-  @@index([followingId, createdAt(sort: Desc)])
-  @@index([followerId, createdAt(sort: Desc)])
-  @@map("follows")
+  @@map("workspaces")
 }
 
-model Block {
-  userId       String   @map("user_id") @db.Uuid
-  targetUserId String   @map("target_user_id") @db.Uuid
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+model WorkspaceMember {
+  workspaceId String        @map("workspace_id") @db.Uuid
+  userId      String        @map("user_id") @db.Uuid
+  role        WorkspaceRole @default(EDITOR)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  user       User @relation("UserBlocking", fields: [userId], references: [id], onDelete: Cascade)
-  targetUser User @relation("UserBlockedBy", fields: [targetUserId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@id([userId, targetUserId])
-  @@index([targetUserId])
-  @@map("blocks")
+  @@id([workspaceId, userId])
+  @@index([userId])
+  @@map("workspace_members")
 }
 
-model Mute {
-  userId       String   @map("user_id") @db.Uuid
-  targetUserId String   @map("target_user_id") @db.Uuid
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+// ─── Social integrations ─────────────────────────────────────────────────────
 
-  user       User @relation("UserMuting", fields: [userId], references: [id], onDelete: Cascade)
-  targetUser User @relation("UserMutedBy", fields: [targetUserId], references: [id], onDelete: Cascade)
+/// A social media account connected to a workspace (e.g. an Instagram business account).
+model SocialAccount {
+  id            String              @id @default(uuid(7)) @db.Uuid
+  workspaceId   String              @map("workspace_id") @db.Uuid
+  platform      SocialPlatform
+  /// The account's ID on the platform (for Instagram: the professional account ID used to publish).
+  externalId    String              @map("external_id") @db.VarChar(100)
+  /// App-scoped user ID, where the platform has one. Meta's deauthorize and data-deletion
+  /// callbacks identify the user by this ID.
+  appScopedId   String?             @map("app_scoped_id") @db.VarChar(100)
+  /// Platform-specific kind, e.g. BUSINESS or CREATOR for Instagram.
+  accountType   String?             @map("account_type") @db.VarChar(30)
+  username      String?             @db.VarChar(100)
+  name          String?             @db.VarChar(200)
+  avatarUrl     String?             @map("avatar_url")
+  status        SocialAccountStatus @default(ACTIVE)
+  connectedById String?             @map("connected_by_id") @db.Uuid
+  lastCheckedAt DateTime?           @map("last_checked_at") @db.Timestamptz(3)
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  @@id([userId, targetUserId])
-  @@index([targetUserId])
-  @@map("mutes")
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  connectedBy User?       @relation(fields: [connectedById], references: [id], onDelete: SetNull)
+  token       OAuthToken?
+
+  @@unique([workspaceId, platform, externalId])
+  @@index([platform, externalId])
+  @@index([platform, appScopedId])
+  @@map("social_accounts")
+}
+
+/// Platform access tokens, encrypted at rest (see utils/tokenCrypto.ts). Kept in their own table
+/// so they are never loaded by accident with the account.
+model OAuthToken {
+  socialAccountId String    @id @map("social_account_id") @db.Uuid
+  accessTokenEnc  String    @map("access_token_enc")
+  refreshTokenEnc String?   @map("refresh_token_enc")
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz(3)
+  scopes          String[]  @default([])
+  lastRefreshedAt DateTime? @map("last_refreshed_at") @db.Timestamptz(3)
+  failureCount    Int       @default(0) @map("failure_count")
+  lastError       String?   @map("last_error")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("oauth_tokens")
+}
+
+/// Short-lived `state` for the connect flow, so a callback can only complete a flow we started.
+model OAuthConnectState {
+  id          String         @id @default(uuid(7)) @db.Uuid
+  stateHash   String         @unique @map("state_hash")
+  userId      String         @map("user_id") @db.Uuid
+  workspaceId String         @map("workspace_id") @db.Uuid
+  platform    SocialPlatform
+  expiresAt   DateTime       @map("expires_at") @db.Timestamptz(3)
+  usedAt      DateTime?      @map("used_at") @db.Timestamptz(3)
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("oauth_connect_states")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  workspaceId String?  @map("workspace_id") @db.Uuid
+  actorId     String?  @map("actor_id") @db.Uuid
+  /// e.g. social_account.connected, social_account.token_refresh_failed
+  action      String   @db.VarChar(80)
+  targetType  String?  @map("target_type") @db.VarChar(40)
+  targetId    String?  @map("target_id") @db.Uuid
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  actor     User?      @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@map("audit_logs")
 }

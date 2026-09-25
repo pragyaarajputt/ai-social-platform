@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { VerifyEmailBanner } from "@/components/auth/VerifyEmailBanner";
 import { SiteHeader } from "@/components/SiteHeader";
+import { WorkspaceProvider } from "@/components/workspace/WorkspaceProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -28,9 +29,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <AuthProvider>
-          <SiteHeader />
-          <VerifyEmailBanner />
-          <main className="flex flex-1 flex-col">{children}</main>
+          <WorkspaceProvider>
+            <SiteHeader />
+            <VerifyEmailBanner />
+            <main className="flex flex-1 flex-col">{children}</main>
+          </WorkspaceProvider>
         </AuthProvider>
       </body>
     </html>

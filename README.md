@@ -1,8 +1,10 @@
-# AI-First Social Platform
+# AI Social: social media management with AI
 
-A social media platform where AI is built into content creation and engagement: captions, hashtags, post writing, content improvement, comment suggestions, bios and feed summaries.
+Connect your social accounts (Instagram first; LinkedIn, Facebook, Threads, X, YouTube and TikTok planned), write a post once with AI help, and publish or schedule it to every platform from one dashboard.
 
-**Status:** Phase 3. Authentication end to end: backend API plus sign-up, login, email verification, password reset and account pages.
+**Status:** Phase 4. Accounts and workspaces, plus **connecting Instagram** (OAuth, encrypted tokens, automatic token refresh). Publishing comes next.
+
+> `docs/PRD.md` describes the original social-network idea and is out of date. The product is now a social media management tool.
 
 ## Tech stack
 
@@ -10,6 +12,7 @@ A social media platform where AI is built into content creation and engagement: 
 - **Backend:** Node.js + Express 5 (TypeScript)
 - **Database:** PostgreSQL 18 + Prisma ORM 7 (pg driver adapter)
 - **Auth:** argon2id passwords, JWT access tokens (jose), rotating refresh tokens in an httpOnly cookie
+- **Integrations:** Instagram API with Instagram Login (Graph API v26.0), plain `fetch`, tokens encrypted with AES-256-GCM
 - **Media (planned):** Cloudinary
 
 ## Structure
@@ -18,9 +21,9 @@ A social media platform where AI is built into content creation and engagement: 
 frontend/
   src/
     app/         pages: (auth)/ login, signup, forgot/reset password, verify email;
-                 (protected)/ account; auth/callback
-    components/  ui/ primitives, auth/ forms and guards
-    lib/         API client, session, form schemas
+                 (protected)/ account, accounts (connected social accounts); auth/callback
+    components/  ui/ primitives, auth/ forms and guards, accounts/, workspace/
+    lib/         API client, session, workspaces, form schemas
 backend/
   prisma/
     schema.prisma  database schema
@@ -29,6 +32,7 @@ backend/
   src/
     config/      environment, app config, Prisma client
     generated/   generated Prisma client (gitignored)
+    integrations/ one adapter per social platform (instagram/), shared interface in types.ts
     controllers/ request handlers
     middleware/  express middleware (auth, validation, rate limits, errors)
     routes/      route definitions
@@ -37,7 +41,8 @@ backend/
     types/       type augmentations
     utils/       helpers
     app.ts       express app setup
-    server.ts    entry point
+    server.ts    API entry point
+    worker.ts    background jobs (hourly token refresh), run separately
   tests/         API integration tests (vitest + supertest)
 docs/
   PRD.md         product requirements
@@ -111,10 +116,37 @@ Errors always look like `{ "error": { "code": "...", "message": "...", "details"
 
 Requests reach Express from the Next.js server, so set `TRUST_PROXY` in `backend/.env` (`loopback` locally) or every user shares one IP for rate limiting. In production, run Next.js behind a load balancer that sets `X-Forwarded-For` itself and trust only that hop: Next.js passes through an `X-Forwarded-For` header sent by the client, so trusting it directly would let clients choose their own IP.
 
+## Workspaces and connected accounts
+
+Everything belongs to a **workspace**, not a user. Each sign-up gets a personal workspace with the user as `OWNER`. Roles are `OWNER`, `ADMIN`, `EDITOR` and `VIEWER`; connecting or disconnecting accounts needs `ADMIN` or above.
+
+| Endpoint | Auth | Purpose |
+| --- | --- | --- |
+| `GET /api/v1/workspaces` | bearer | My workspaces |
+| `GET /api/v1/workspaces/:id/social-accounts` | bearer, VIEWER+ | Connected accounts (never includes tokens) and which platforms are configured |
+| `POST /api/v1/workspaces/:id/social-accounts/instagram/connect` | bearer, ADMIN+ | Returns the Instagram consent URL |
+| `DELETE /api/v1/workspaces/:id/social-accounts/:accountId` | bearer, ADMIN+ | Disconnect: deletes the token |
+| `GET /api/v1/integrations/instagram/callback` | — | Instagram redirects here; we redirect to `/accounts?connected=…` or `?error=…` |
+| `POST /api/v1/integrations/instagram/deauthorize` | Meta `signed_request` | User removed our app on Instagram |
+| `POST /api/v1/integrations/instagram/data-deletion` | Meta `signed_request` | User asked Meta to delete their data |
+
+**Tokens** are encrypted with AES-256-GCM (`TOKEN_ENCRYPTION_KEY`) and never sent to the browser. **The worker** (`npm run worker`) refreshes Instagram tokens every hour once they are 24 hours old and expire within 10 days; an account whose token can't be refreshed is marked `NEEDS_REAUTH` and shown as "Reconnect needed". Running several workers is safe: a Postgres advisory lock lets only one do each run.
+
+### Setting up Instagram
+
+1. **Instagram account:** it must be a professional account (Business or Creator). In the Instagram app: Settings → Account type and tools → Switch to professional account.
+2. **Meta app:** at developers.facebook.com create an app (type Business), add the **Instagram** product, and choose **API setup with Instagram business login**. Copy the **Instagram app ID and secret**.
+3. **Testers:** App roles → Roles → Instagram testers → add your account, then accept the invite in Instagram (Settings → Apps and websites → Tester invites). In development mode, only tester accounts can connect.
+4. **Redirect URI:** add `https://<your-host>/api/v1/integrations/instagram/callback` under "Business login settings". Meta needs an HTTPS URL, so local development needs a tunnel with a fixed address.
+5. **Deauthorize and data deletion:** set the callback URLs to `…/api/v1/integrations/instagram/deauthorize` and `…/data-deletion` (required for app review).
+6. Put `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` and `INSTAGRAM_REDIRECT_URI` in `backend/.env` and restart the backend.
+
+Serving accounts you don't own needs Meta **app review** (advanced access).
+
 ## Tests
 
 ```bash
-cd backend && npm test    # API integration tests
+cd backend && npm test    # API integration tests (auth, workspaces, Instagram with a fake Instagram API)
 cd frontend && npm test   # API client and session unit tests
 ```
 
@@ -127,6 +159,7 @@ Backend tests run against a separate `social_test` database, derived from `DATAB
 | backend | `npm run dev` | Start with auto-reload (nodemon + tsx) |
 | backend | `npm run build` | Compile TypeScript to `dist/` |
 | backend | `npm start` | Run the compiled build |
+| backend | `npm run worker` | Run background jobs (token refresh) |
 | backend | `npm run typecheck` | Type-check without emitting |
 | backend | `npm test` | Run API tests |
 | backend | `npm run db:migrate` | Create and apply migrations in development |

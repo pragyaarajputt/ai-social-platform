@@ -44,7 +44,7 @@ async function register(overrides = {}) {
 }
 
 beforeEach(async () => {
-  await prisma.$executeRawUnsafe("TRUNCATE TABLE users CASCADE");
+  await prisma.$executeRawUnsafe("TRUNCATE TABLE users, workspaces CASCADE");
   testOutbox.length = 0;
 });
 

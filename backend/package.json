@@ -8,6 +8,8 @@
     "dev": "nodemon",
     "build": "tsc",
     "start": "node dist/server.js",
+    "worker": "tsx src/worker.ts",
+    "worker:start": "node dist/worker.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
