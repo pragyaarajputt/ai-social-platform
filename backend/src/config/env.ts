@@ -42,6 +42,15 @@ const schema = z.object({
   INSTAGRAM_APP_SECRET: optional,
   INSTAGRAM_REDIRECT_URI: optional,
   INSTAGRAM_GRAPH_VERSION: z.string().regex(/^v\d+\.\d+$/).default("v26.0"),
+
+  // Cloudinary media storage. Uploading media is off unless all three are set.
+  CLOUDINARY_CLOUD_NAME: optional,
+  CLOUDINARY_API_KEY: optional,
+  CLOUDINARY_API_SECRET: optional,
+  CLOUDINARY_FOLDER: z.string().regex(/^[\w-]+$/).default("ai-social"),
+
+  // How often the worker looks for posts to publish.
+  PUBLISH_POLL_INTERVAL_MS: z.coerce.number().int().min(500).default(5000),
 });
 
 function parseTrustProxy(value: string | undefined): boolean | number | string {
@@ -87,4 +96,14 @@ export const env = {
           graphVersion: e.INSTAGRAM_GRAPH_VERSION,
         }
       : undefined,
+  cloudinary:
+    e.CLOUDINARY_CLOUD_NAME && e.CLOUDINARY_API_KEY && e.CLOUDINARY_API_SECRET
+      ? {
+          cloudName: e.CLOUDINARY_CLOUD_NAME,
+          apiKey: e.CLOUDINARY_API_KEY,
+          apiSecret: e.CLOUDINARY_API_SECRET,
+          folder: e.CLOUDINARY_FOLDER,
+        }
+      : undefined,
+  publishPollIntervalMs: e.PUBLISH_POLL_INTERVAL_MS,
 };

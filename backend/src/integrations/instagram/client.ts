@@ -106,6 +106,79 @@ export async function getProfile(app: InstagramAppConfig, accessToken: string): 
   };
 }
 
+// ─── Content publishing ─────────────────────────────────────────────────────
+// https://developers.facebook.com/docs/instagram-platform/content-publishing
+
+export type ContainerStatus = "IN_PROGRESS" | "FINISHED" | "PUBLISHED" | "ERROR" | "EXPIRED";
+
+async function graphPost(app: InstagramAppConfig, path: string, accessToken: string, params: Record<string, string>) {
+  // Token in the form body, not the URL, so it never shows up in URL logs.
+  return request(`${GRAPH_HOST}/${app.graphVersion}/${path}`, {
+    method: "POST",
+    body: new URLSearchParams({ ...params, access_token: accessToken }),
+  });
+}
+
+async function graphGet(app: InstagramAppConfig, path: string, accessToken: string, params: Record<string, string>) {
+  const url = new URL(`${GRAPH_HOST}/${app.graphVersion}/${path}`);
+  url.search = new URLSearchParams({ ...params, access_token: accessToken }).toString();
+  return request(url.toString());
+}
+
+/** Creates a media container (image, video, reel, carousel item or carousel). Returns its ID. */
+export async function createContainer(
+  app: InstagramAppConfig,
+  igUserId: string,
+  accessToken: string,
+  params: Record<string, string>,
+): Promise<string> {
+  const body = firstRecord(await graphPost(app, `${igUserId}/media`, accessToken, params));
+  if (body.id === undefined) throw unexpected("container creation returned no ID");
+  return String(body.id);
+}
+
+export async function getContainerStatus(
+  app: InstagramAppConfig,
+  containerId: string,
+  accessToken: string,
+): Promise<{ statusCode: ContainerStatus; status?: string }> {
+  const body = firstRecord(await graphGet(app, containerId, accessToken, { fields: "status_code,status" }));
+  return { statusCode: String(body.status_code) as ContainerStatus, status: optionalString(body.status) };
+}
+
+/** Publishes a finished container. Returns the new media ID. */
+export async function publishContainer(
+  app: InstagramAppConfig,
+  igUserId: string,
+  accessToken: string,
+  containerId: string,
+): Promise<string> {
+  const body = firstRecord(await graphPost(app, `${igUserId}/media_publish`, accessToken, { creation_id: containerId }));
+  if (body.id === undefined) throw unexpected("publish returned no media ID");
+  return String(body.id);
+}
+
+export async function getPermalink(app: InstagramAppConfig, mediaId: string, accessToken: string): Promise<string | undefined> {
+  const body = firstRecord(await graphGet(app, mediaId, accessToken, { fields: "permalink" }));
+  return optionalString(body.permalink);
+}
+
+/** The account's most recent posts, newest first. Used to recover after a crash mid-publish. */
+export async function listRecentMedia(
+  app: InstagramAppConfig,
+  igUserId: string,
+  accessToken: string,
+): Promise<{ id: string; permalink?: string; timestamp?: string }[]> {
+  const body = (await graphGet(app, `${igUserId}/media`, accessToken, { fields: "id,permalink,timestamp", limit: "10" })) as {
+    data?: Record<string, unknown>[];
+  };
+  return (body.data ?? []).map((m) => ({
+    id: String(m.id),
+    permalink: optionalString(m.permalink),
+    timestamp: optionalString(m.timestamp),
+  }));
+}
+
 // ─── HTTP + errors ──────────────────────────────────────────────────────────
 
 async function request(url: string, init?: RequestInit): Promise<unknown> {

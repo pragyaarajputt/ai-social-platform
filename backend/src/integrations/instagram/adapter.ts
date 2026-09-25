@@ -3,6 +3,7 @@ import type { PlatformAdapter, TokenSet } from "../types.js";
 import { PlatformApiError } from "../types.js";
 import { instagramCapabilities } from "./capabilities.js";
 import * as ig from "./client.js";
+import * as publisher from "./publisher.js";
 
 function app(): ig.InstagramAppConfig {
   if (!env.instagram) throw new PlatformApiError("INSTAGRAM", "UNAVAILABLE", "Instagram is not configured on this server");
@@ -50,4 +51,8 @@ export const instagramAdapter: PlatformAdapter = {
 
   // A long-lived token can only be refreshed once it is at least 24 hours old.
   refreshableAfter: (lastRefreshedAt) => new Date(lastRefreshedAt.getTime() + 24 * 3_600_000),
+
+  chooseFormat: publisher.chooseFormat,
+  validatePost: publisher.validatePost,
+  publish: (ctx) => publisher.publish(app(), ctx),
 };

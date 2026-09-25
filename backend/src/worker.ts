@@ -1,47 +1,68 @@
 import { prisma } from "./config/database.js";
+import { env } from "./config/env.js";
+import { runPublishCycle } from "./jobs/publishQueue.js";
 import { purgeExpiredConnectStates, refreshDueTokens } from "./services/tokenRefresh.service.js";
 
-// Background jobs that don't need a queue yet. Run with `npm run worker`, separately from the API.
-// Phase 5 moves publishing to BullMQ; this stays the home of periodic maintenance.
+// Background jobs. Run with `npm run worker`, separately from the API. Safe to run several:
+// - publishing: every few seconds; rows are claimed with SKIP LOCKED, so no post is taken twice;
+// - maintenance (token refresh): hourly, guarded by a Postgres advisory lock.
 
-const INTERVAL_MS = 60 * 60_000; // hourly
-const LOCK_ID = 7_310_001; // arbitrary constant: "token refresh"
+const MAINTENANCE_INTERVAL_MS = 60 * 60_000;
+const MAINTENANCE_LOCK_ID = 7_310_001; // arbitrary constant: "token refresh"
 
 /**
- * Runs the job only if no other worker is running it right now. The Postgres advisory lock is
- * held by this transaction and released automatically when it ends, even if the process dies.
+ * Runs maintenance only if no other worker is running it right now. The advisory lock is held by
+ * this transaction and released automatically when it ends, even if the process dies.
  */
-async function runExclusively() {
-  await prisma.$transaction(
-    async (tx) => {
-      const [row] = await tx.$queryRaw<{ locked: boolean }[]>`SELECT pg_try_advisory_xact_lock(${LOCK_ID}) AS locked`;
-      if (!row?.locked) {
-        console.log("[worker] another worker holds the lock; skipping this run");
-        return;
-      }
-      const summary = await refreshDueTokens();
-      const purged = await purgeExpiredConnectStates();
-      console.log(`[worker] token refresh: ${JSON.stringify(summary)}; expired connect states purged: ${purged}`);
-    },
-    { maxWait: 5_000, timeout: 10 * 60_000 },
-  );
-}
-
-async function tick() {
+async function runMaintenance() {
   try {
-    await runExclusively();
+    await prisma.$transaction(
+      async (tx) => {
+        const [row] = await tx.$queryRaw<{ locked: boolean }[]>`SELECT pg_try_advisory_xact_lock(${MAINTENANCE_LOCK_ID}) AS locked`;
+        if (!row?.locked) {
+          console.log("[worker] another worker holds the lock; skipping this run");
+          return;
+        }
+        const summary = await refreshDueTokens();
+        const purged = await purgeExpiredConnectStates();
+        console.log(`[worker] token refresh: ${JSON.stringify(summary)}; expired connect states purged: ${purged}`);
+      },
+      { maxWait: 5_000, timeout: 10 * 60_000 },
+    );
   } catch (err) {
-    console.error("[worker] run failed:", err);
+    console.error("[worker] maintenance failed:", err);
   }
 }
 
-console.log(`[worker] started; running every ${INTERVAL_MS / 60_000} minutes`);
-void tick();
-const timer = setInterval(() => void tick(), INTERVAL_MS);
+let publishing = false;
+async function runPublishing() {
+  if (publishing) return; // previous cycle still running
+  publishing = true;
+  try {
+    const outcomes = await runPublishCycle();
+    if (outcomes.length) console.log(`[worker] publish: ${outcomes.join(", ")}`);
+  } catch (err) {
+    console.error("[worker] publish cycle failed:", err);
+  } finally {
+    publishing = false;
+  }
+}
+
+console.log(
+  `[worker] started; publishing every ${env.publishPollIntervalMs / 1000}s, maintenance every ${MAINTENANCE_INTERVAL_MS / 60_000} minutes`,
+);
+void runMaintenance();
+void runPublishing();
+const timers = [
+  setInterval(() => void runMaintenance(), MAINTENANCE_INTERVAL_MS),
+  setInterval(() => void runPublishing(), env.publishPollIntervalMs),
+];
 
 async function shutdown(signal: string) {
   console.log(`[worker] ${signal} received, shutting down`);
-  clearInterval(timer);
+  timers.forEach(clearInterval);
+  // Let an in-flight publish finish, so its progress is saved; its lock expires anyway if we're killed.
+  for (let i = 0; publishing && i < 50; i++) await new Promise((r) => setTimeout(r, 200));
   await prisma.$disconnect();
   process.exit(0);
 }

@@ -1,4 +1,4 @@
-import type { SocialPlatform } from "../generated/prisma/enums.js";
+import type { PostFormat, SocialPlatform } from "../generated/prisma/enums.js";
 
 /** What a platform accepts. Read by validation now, and by the composer and AI optimizer later. */
 export interface PlatformCapabilities {
@@ -33,9 +33,44 @@ export interface TokenSet {
   scopes: string[];
 }
 
+export interface PublishMedia {
+  type: "IMAGE" | "VIDEO";
+  /** Public URL the platform downloads from. */
+  url: string;
+  format: string;
+  bytes: number;
+  width: number;
+  height: number;
+  durationSec?: number | null;
+}
+
+export interface PublishRequest {
+  format: PostFormat;
+  caption: string;
+  media: PublishMedia[];
+}
+
+export type PublishResult =
+  | { kind: "published"; externalPostId?: string; permalink?: string }
+  /** The platform is still processing media: call publish() again after retryAfterMs. */
+  | { kind: "waiting"; retryAfterMs: number };
+
+export interface PublishContext {
+  accessToken: string;
+  /** The account's ID on the platform. */
+  accountExternalId: string;
+  request: PublishRequest;
+  /** Progress saved by earlier calls (e.g. container IDs). Empty on the first call. */
+  state: Record<string, unknown>;
+  /** Persists progress immediately, so a crash never makes a retry repeat a step. */
+  saveState(state: Record<string, unknown>): Promise<void>;
+  /** When publishing of this target first started; used to recover a post after a crash. */
+  startedAt: Date;
+}
+
 /**
  * One implementation per platform. The rest of the app only talks to this interface, so adding a
- * platform means writing one adapter. Publishing methods arrive in the next phase.
+ * platform means writing one adapter.
  */
 export interface PlatformAdapter {
   platform: SocialPlatform;
@@ -49,17 +84,41 @@ export interface PlatformAdapter {
   refreshToken(token: TokenSet): Promise<TokenSet>;
   /** Earliest moment a token may be refreshed, if the platform restricts it. */
   refreshableAfter?(lastRefreshedAt: Date): Date;
+
+  /** The post format this platform will use for these media, or null if it can't post them. */
+  chooseFormat(media: Pick<PublishMedia, "type">[]): PostFormat | null;
+  /** Problems that would make the platform reject the post; empty when it's fine. */
+  validatePost(request: PublishRequest): string[];
+  /**
+   * Publishes step by step. Safe to call repeatedly: it resumes from `state`, and throws
+   * PlatformApiError on failure (see isRetryable).
+   */
+  publish(ctx: PublishContext): Promise<PublishResult>;
 }
 
 /** An error from a platform API, with a code we can act on. */
 export class PlatformApiError extends Error {
   constructor(
     public readonly platform: SocialPlatform,
-    public readonly code: "INVALID_TOKEN" | "PERMISSION_DENIED" | "RATE_LIMITED" | "BAD_REQUEST" | "UNAVAILABLE",
+    public readonly code:
+      | "INVALID_TOKEN"
+      | "PERMISSION_DENIED"
+      | "RATE_LIMITED"
+      | "BAD_REQUEST"
+      | "UNAVAILABLE"
+      /** The platform refused the media itself (format, size, processing error). */
+      | "MEDIA_REJECTED"
+      /** Temporary: the platform lost track of an in-progress upload; retry from scratch. */
+      | "MEDIA_EXPIRED",
     message: string,
     public readonly details?: unknown,
   ) {
     super(message);
     this.name = "PlatformApiError";
+  }
+
+  /** Worth trying again later. Everything else needs a person to fix something first. */
+  get retryable(): boolean {
+    return this.code === "RATE_LIMITED" || this.code === "UNAVAILABLE" || this.code === "MEDIA_EXPIRED";
   }
 }

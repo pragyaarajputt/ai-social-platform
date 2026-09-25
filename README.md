@@ -2,7 +2,7 @@
 
 Connect your social accounts (Instagram first; LinkedIn, Facebook, Threads, X, YouTube and TikTok planned), write a post once with AI help, and publish or schedule it to every platform from one dashboard.
 
-**Status:** Phase 4. Accounts and workspaces, plus **connecting Instagram** (OAuth, encrypted tokens, automatic token refresh). Publishing comes next.
+**Status:** Phase 5. Connect Instagram, upload photos and videos, and **publish to one or more Instagram accounts** (single image, carousel, Reel). Scheduling comes next.
 
 > `docs/PRD.md` describes the original social-network idea and is out of date. The product is now a social media management tool.
 
@@ -13,7 +13,8 @@ Connect your social accounts (Instagram first; LinkedIn, Facebook, Threads, X, Y
 - **Database:** PostgreSQL 18 + Prisma ORM 7 (pg driver adapter)
 - **Auth:** argon2id passwords, JWT access tokens (jose), rotating refresh tokens in an httpOnly cookie
 - **Integrations:** Instagram API with Instagram Login (Graph API v26.0), plain `fetch`, tokens encrypted with AES-256-GCM
-- **Media (planned):** Cloudinary
+- **Media:** Cloudinary (direct browser uploads; REST API with plain `fetch`)
+- **Jobs:** a Postgres-backed queue (`post_targets` rows claimed with `FOR UPDATE SKIP LOCKED`), no Redis
 
 ## Structure
 
@@ -21,9 +22,9 @@ Connect your social accounts (Instagram first; LinkedIn, Facebook, Threads, X, Y
 frontend/
   src/
     app/         pages: (auth)/ login, signup, forgot/reset password, verify email;
-                 (protected)/ account, accounts (connected social accounts); auth/callback
-    components/  ui/ primitives, auth/ forms and guards, accounts/, workspace/
-    lib/         API client, session, workspaces, form schemas
+                 (protected)/ account, accounts, posts (list, new, [id]); auth/callback
+    components/  ui/ primitives, auth/ forms and guards, accounts/, posts/, workspace/
+    lib/         API client, session, workspaces, posts + uploads, Instagram rules, form schemas
 backend/
   prisma/
     schema.prisma  database schema
@@ -33,6 +34,8 @@ backend/
     config/      environment, app config, Prisma client
     generated/   generated Prisma client (gitignored)
     integrations/ one adapter per social platform (instagram/), shared interface in types.ts
+    jobs/        publish queue: claim, publish, retry
+    storage/     Cloudinary client
     controllers/ request handlers
     middleware/  express middleware (auth, validation, rate limits, errors)
     routes/      route definitions
@@ -42,7 +45,7 @@ backend/
     utils/       helpers
     app.ts       express app setup
     server.ts    API entry point
-    worker.ts    background jobs (hourly token refresh), run separately
+    worker.ts    background jobs (publishing every 5 s, hourly token refresh), run separately
   tests/         API integration tests (vitest + supertest)
 docs/
   PRD.md         product requirements
@@ -143,10 +146,23 @@ Everything belongs to a **workspace**, not a user. Each sign-up gets a personal 
 
 Serving accounts you don't own needs Meta **app review** (advanced access).
 
+## Publishing
+
+1. **Upload:** the browser asks the API for a signed upload (`POST /workspaces/:id/media/upload-signature`), sends the file **straight to Cloudinary**, then registers it (`POST /workspaces/:id/media`). The API reads size, dimensions and duration from Cloudinary, not from the browser.
+2. **Create:** `POST /workspaces/:id/posts` with a caption, media IDs and accounts. It is validated against each platform's rules (Instagram: 2,200 characters, 30 hashtags, 20 mentions, aspect ratio 4:5 to 1.91:1, MP4/MOV video of 3 s to 15 min, up to 10 carousel items). The post and one **target** per account are saved and queued in one transaction.
+3. **Publish:** `npm run worker` claims due targets every 5 s. For Instagram: create media container(s) → wait while Instagram processes video (checked every 30 s, for up to 30 min) → publish → fetch the link. Images are sent as JPEG; Cloudinary converts them.
+4. **Status:** `GET /workspaces/:id/posts/:postId` shows each account's status. The post page refreshes itself until everything is done.
+
+**No double posts:** container IDs and the published media ID are saved the moment Instagram returns them. A retry reuses the saved container (Instagram publishes a container only once). If the worker died right after publishing, the post is found among the account's recent media instead of being published again.
+
+**Retries:** temporary errors (rate limits, Instagram unavailable) are retried after 30 s, 2 min, 8 min and 30 min, then marked failed. A rejected token marks the account "Reconnect needed". Media Instagram can't process fails at once with its reason. Failed accounts can be retried from the post page (`POST …/posts/:postId/targets/:targetId/retry`).
+
+Needs `CLOUDINARY_*` in `backend/.env`, a connected Instagram account, and the worker running. Videos are sent as uploaded, so only MP4 and MOV are accepted for now.
+
 ## Tests
 
 ```bash
-cd backend && npm test    # API integration tests (auth, workspaces, Instagram with a fake Instagram API)
+cd backend && npm test    # API integration tests (auth, workspaces, Instagram connect + publishing, with fake Instagram and Cloudinary APIs)
 cd frontend && npm test   # API client and session unit tests
 ```
 
@@ -159,7 +175,7 @@ Backend tests run against a separate `social_test` database, derived from `DATAB
 | backend | `npm run dev` | Start with auto-reload (nodemon + tsx) |
 | backend | `npm run build` | Compile TypeScript to `dist/` |
 | backend | `npm start` | Run the compiled build |
-| backend | `npm run worker` | Run background jobs (token refresh) |
+| backend | `npm run worker` | Run background jobs: publishing and token refresh. **Posts only go out while this runs** |
 | backend | `npm run typecheck` | Type-check without emitting |
 | backend | `npm test` | Run API tests |
 | backend | `npm run db:migrate` | Create and apply migrations in development |

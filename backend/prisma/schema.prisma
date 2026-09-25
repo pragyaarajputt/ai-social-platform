@@ -91,6 +91,8 @@ model User {
 
   memberships        WorkspaceMember[]
   connectedAccounts  SocialAccount[]
+  uploadedMedia      MediaAsset[]
+  posts              Post[]
   auditLogs          AuditLog[]
   oauthConnectStates OAuthConnectState[]
 
@@ -188,6 +190,8 @@ model Workspace {
   socialAccounts SocialAccount[]
   connectStates  OAuthConnectState[]
   auditLogs      AuditLog[]
+  mediaAssets    MediaAsset[]
+  posts          Post[]
 
   @@map("workspaces")
 }
@@ -229,9 +233,10 @@ model SocialAccount {
   createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  connectedBy User?       @relation(fields: [connectedById], references: [id], onDelete: SetNull)
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  connectedBy User?        @relation(fields: [connectedById], references: [id], onDelete: SetNull)
   token       OAuthToken?
+  postTargets PostTarget[]
 
   @@unique([workspaceId, platform, externalId])
   @@index([platform, externalId])
@@ -292,4 +297,153 @@ model AuditLog {
 
   @@index([workspaceId, createdAt(sort: Desc)])
   @@map("audit_logs")
+}
+
+// ─── Content & publishing ────────────────────────────────────────────────────
+
+enum MediaType {
+  IMAGE
+  VIDEO
+
+  @@map("media_type")
+}
+
+enum PostStatus {
+  DRAFT
+  PUBLISHING
+  PUBLISHED
+  /// Published to some accounts, failed on others.
+  PARTIALLY_FAILED
+  FAILED
+
+  @@map("post_status")
+}
+
+enum PostFormat {
+  IMAGE
+  CAROUSEL
+  REEL
+
+  @@map("post_format")
+}
+
+enum TargetStatus {
+  QUEUED
+  PUBLISHING
+  /// The platform is still processing uploaded video; checked again later.
+  WAITING_FOR_MEDIA
+  PUBLISHED
+  FAILED
+  CANCELLED
+
+  @@map("target_status")
+}
+
+/// A file in the workspace's media library, stored on Cloudinary.
+model MediaAsset {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  workspaceId  String    @map("workspace_id") @db.Uuid
+  uploadedById String?   @map("uploaded_by_id") @db.Uuid
+  publicId     String    @map("public_id") @db.VarChar(255)
+  type         MediaType
+  /// Original format as uploaded, e.g. "png", "mp4".
+  format       String    @db.VarChar(20)
+  bytes        Int
+  width        Int
+  height       Int
+  durationSec  Float?    @map("duration_sec")
+  secureUrl    String    @map("secure_url")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  workspace  Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  uploadedBy User?       @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  posts      PostMedia[]
+
+  @@unique([workspaceId, publicId])
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@map("media_assets")
+}
+
+/// Content written once; published to one or more accounts through its targets.
+model Post {
+  id          String     @id @default(uuid(7)) @db.Uuid
+  workspaceId String     @map("workspace_id") @db.Uuid
+  authorId    String?    @map("author_id") @db.Uuid
+  caption     String     @default("")
+  status      PostStatus @default(DRAFT)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  author    User?        @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  media     PostMedia[]
+  targets   PostTarget[]
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@map("posts")
+}
+
+model PostMedia {
+  postId       String @map("post_id") @db.Uuid
+  mediaAssetId String @map("media_asset_id") @db.Uuid
+  position     Int
+
+  post       Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+
+  @@id([postId, position])
+  @@index([mediaAssetId])
+  @@map("post_media")
+}
+
+/// One post going to one account. Also the publish job: the worker claims rows whose
+/// next_attempt_at has passed (SELECT ... FOR UPDATE SKIP LOCKED), see jobs/publishQueue.ts.
+model PostTarget {
+  id              String       @id @default(uuid(7)) @db.Uuid
+  postId          String       @map("post_id") @db.Uuid
+  socialAccountId String       @map("social_account_id") @db.Uuid
+  captionOverride String?      @map("caption_override")
+  format          PostFormat
+  status          TargetStatus @default(QUEUED)
+  /// When the worker should next pick this up (publish time now; scheduled time in Phase 6).
+  nextAttemptAt   DateTime?    @map("next_attempt_at") @db.Timestamptz(3)
+  /// Set while a worker is processing it; an expired lock means the worker died.
+  lockedUntil     DateTime?    @map("locked_until") @db.Timestamptz(3)
+  attempts        Int          @default(0)
+  /// Platform progress saved as soon as it happens (e.g. container IDs), so retries never repeat a step.
+  platformState   Json         @default("{}") @map("platform_state")
+  externalPostId  String?      @map("external_post_id") @db.VarChar(100)
+  permalink       String?
+  publishedAt     DateTime?    @map("published_at") @db.Timestamptz(3)
+  lastErrorCode   String?      @map("last_error_code") @db.VarChar(40)
+  lastError       String?      @map("last_error")
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  post          Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount    @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  attemptLog    PublishAttempt[]
+
+  @@unique([postId, socialAccountId])
+  @@index([status, nextAttemptAt])
+  @@index([socialAccountId])
+  @@map("post_targets")
+}
+
+/// History of each publish attempt, for debugging and support.
+model PublishAttempt {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  postTargetId String    @map("post_target_id") @db.Uuid
+  attempt      Int
+  outcome      String    @db.VarChar(30)
+  errorCode    String?   @map("error_code") @db.VarChar(40)
+  errorMessage String?   @map("error_message")
+  startedAt    DateTime  @map("started_at") @db.Timestamptz(3)
+  finishedAt   DateTime? @map("finished_at") @db.Timestamptz(3)
+
+  postTarget PostTarget @relation(fields: [postTargetId], references: [id], onDelete: Cascade)
+
+  @@index([postTargetId, startedAt])
+  @@map("publish_attempts")
 }
