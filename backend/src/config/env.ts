@@ -15,6 +15,9 @@ const schema = z.object({
   CORS_ORIGIN: z.url().default("http://localhost:3000"),
   APP_URL: z.url().default("http://localhost:3000"),
   DATABASE_URL: z.string().min(1),
+  // Express "trust proxy": which proxies may set X-Forwarded-For. Needed so rate limits see real client IPs
+  // when requests arrive through the Next.js rewrite. e.g. "loopback", a hop count like "1", or unset.
+  TRUST_PROXY: optional,
 
   JWT_ACCESS_SECRET: z.string().min(32, "must be at least 32 characters"),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
@@ -29,6 +32,12 @@ const schema = z.object({
   GOOGLE_CLIENT_SECRET: optional,
   GOOGLE_REDIRECT_URI: optional,
 });
+
+function parseTrustProxy(value: string | undefined): boolean | number | string {
+  if (value === undefined || value === "false") return false;
+  if (value === "true") return true;
+  return /^\d+$/.test(value) ? Number(value) : value;
+}
 
 const parsed = schema.safeParse(process.env);
 if (!parsed.success) {
@@ -46,6 +55,7 @@ export const env = {
   corsOrigin: e.CORS_ORIGIN,
   appUrl: e.APP_URL,
   databaseUrl: e.DATABASE_URL,
+  trustProxy: parseTrustProxy(e.TRUST_PROXY),
   jwtAccessSecret: e.JWT_ACCESS_SECRET,
   accessTokenTtlSeconds: e.ACCESS_TOKEN_TTL_SECONDS,
   refreshTokenTtlDays: e.REFRESH_TOKEN_TTL_DAYS,

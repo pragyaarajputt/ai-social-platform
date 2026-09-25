@@ -2,7 +2,7 @@
 
 A social media platform where AI is built into content creation and engagement: captions, hashtags, post writing, content improvement, comment suggestions, bios and feed summaries.
 
-**Status:** Phase 2. Backend authentication (email + password, JWT, refresh rotation, email verification, password reset, Google sign-in). No frontend pages yet.
+**Status:** Phase 3. Authentication end to end: backend API plus sign-up, login, email verification, password reset and account pages.
 
 ## Tech stack
 
@@ -15,7 +15,12 @@ A social media platform where AI is built into content creation and engagement: 
 ## Structure
 
 ```
-frontend/        Next.js app (src/app)
+frontend/
+  src/
+    app/         pages: (auth)/ login, signup, forgot/reset password, verify email;
+                 (protected)/ account; auth/callback
+    components/  ui/ primitives, auth/ forms and guards
+    lib/         API client, session, form schemas
 backend/
   prisma/
     schema.prisma  database schema
@@ -64,10 +69,12 @@ npm run dev
 
 # Frontend: http://localhost:3000
 cd frontend
-cp .env.example .env.local
+cp .env.example .env.local  # API_URL: where Express runs
 npm install
 npm run dev
 ```
+
+Open http://localhost:3000. The browser only ever talks to the frontend: `/api/v1/*` is forwarded to Express by a rewrite in `frontend/next.config.ts`, so the refresh cookie is first-party and no CORS is needed.
 
 Check the API is running: `curl http://localhost:4000/health`. Check the database connection: `curl http://localhost:4000/ready`.
 
@@ -93,14 +100,25 @@ All under `/api/v1/auth`. Responses that start a session return `{ user, accessT
 
 Errors always look like `{ "error": { "code": "...", "message": "...", "details": ... } }`.
 
+### How the frontend keeps you signed in
+
+- The access token is kept in memory only (never in localStorage). On page load the app calls `POST /refresh`, and the httpOnly cookie restores the session.
+- It refreshes 60 seconds before the token expires, and retries once if a request gets `TOKEN_EXPIRED`.
+- Only one refresh runs at a time, across all tabs (Web Locks API). This matters because the server treats a refresh token used twice as stolen and ends the session.
+- Pages under `app/(protected)` redirect to `/login?next=...` when signed out. The API is the real security boundary: every protected endpoint checks the token.
+
+### Client IPs behind the rewrite
+
+Requests reach Express from the Next.js server, so set `TRUST_PROXY` in `backend/.env` (`loopback` locally) or every user shares one IP for rate limiting. In production, run Next.js behind a load balancer that sets `X-Forwarded-For` itself and trust only that hop: Next.js passes through an `X-Forwarded-For` header sent by the client, so trusting it directly would let clients choose their own IP.
+
 ## Tests
 
 ```bash
-cd backend
-npm test
+cd backend && npm test    # API integration tests
+cd frontend && npm test   # API client and session unit tests
 ```
 
-Tests run against a separate `social_test` database, derived from `DATABASE_URL` in `.env` (or set `TEST_DATABASE_URL`). Migrations are applied automatically, and tables are emptied before each test.
+Backend tests run against a separate `social_test` database, derived from `DATABASE_URL` in `.env` (or set `TEST_DATABASE_URL`). Migrations are applied automatically, and tables are emptied before each test.
 
 ### Scripts
 
@@ -119,6 +137,8 @@ Tests run against a separate `social_test` database, derived from `DATABASE_URL`
 | frontend | `npm run dev` | Start Next.js dev server |
 | frontend | `npm run build` | Production build |
 | frontend | `npm run lint` | Run ESLint |
+| frontend | `npm run typecheck` | Type-check without emitting |
+| frontend | `npm test` | Run unit tests |
 
 TypeScript is pinned to 6.0.x because typescript-eslint does not yet support TypeScript 7.
 
