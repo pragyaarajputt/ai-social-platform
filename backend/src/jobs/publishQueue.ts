@@ -1,5 +1,6 @@
 import { prisma } from "../config/database.js";
 import type { Prisma } from "../generated/prisma/client.js";
+import type { PostStatus, TargetStatus } from "../generated/prisma/enums.js";
 import { getAdapter } from "../integrations/registry.js";
 import { PlatformApiError } from "../integrations/types.js";
 import { audit } from "../services/audit.service.js";
@@ -16,6 +17,11 @@ const RETRY_BACKOFF_MS = [30_000, 2 * 60_000, 8 * 60_000, 30 * 60_000];
 const MAX_ATTEMPTS = RETRY_BACKOFF_MS.length + 1;
 /** How long to keep waiting for a platform to process video before giving up. */
 const MAX_PROCESSING_WAIT_MS = 30 * 60_000;
+/**
+ * A scheduled post whose time passed more than this long ago (e.g. the worker was down) is marked
+ * missed instead of published: a week-old "sale ends tonight" post shouldn't suddenly appear.
+ */
+export const MAX_SCHEDULE_LATENESS_MS = 24 * 3_600_000;
 
 /** Claims up to `limit` due targets for this worker. */
 export async function claimDueTargets(limit: number, now = new Date()): Promise<string[]> {
@@ -25,7 +31,7 @@ export async function claimDueTargets(limit: number, now = new Date()): Promise<
     SET status = 'PUBLISHING', locked_until = ${lockedUntil}, updated_at = ${now}
     WHERE id IN (
       SELECT id FROM post_targets
-      WHERE status IN ('QUEUED', 'WAITING_FOR_MEDIA', 'PUBLISHING')
+      WHERE status IN ('SCHEDULED', 'QUEUED', 'WAITING_FOR_MEDIA', 'PUBLISHING')
         AND next_attempt_at <= ${now}
         AND (locked_until IS NULL OR locked_until < ${now})
       ORDER BY next_attempt_at
@@ -54,6 +60,22 @@ export async function processTarget(targetId: string, now = new Date()): Promise
   const state = { ...(target.platformState as Record<string, unknown>) };
   const firstStartedAt = typeof state._startedAt === "string" ? new Date(state._startedAt) : startedAt;
   state._startedAt = firstStartedAt.toISOString();
+
+  // Too late to publish a scheduled post that hasn't started (nothing was sent to the platform yet).
+  const notStarted = target.attempts === 0 && Object.keys(target.platformState as object).length === 0;
+  if (target.scheduledAt && notStarted && now.getTime() - target.scheduledAt.getTime() > MAX_SCHEDULE_LATENESS_MS) {
+    return fail(
+      target.id,
+      target.post.id,
+      target.attempts,
+      startedAt,
+      "MISSED_SCHEDULE",
+      "This post missed its scheduled time by more than 24 hours, so it wasn't published. Reschedule it or publish it now.",
+    );
+  }
+  if (target.post.status === "SCHEDULED") {
+    await prisma.post.update({ where: { id: target.post.id }, data: { status: "PUBLISHING" } });
+  }
 
   if (account.status !== "ACTIVE" || !account.token) {
     return fail(target.id, target.post.id, target.attempts, startedAt, "ACCOUNT_NOT_CONNECTED", "This account needs to be reconnected.");
@@ -176,19 +198,20 @@ function logAttempt(postTargetId: string, attempt: number, outcome: string, star
   });
 }
 
-/** A post's status summarises its targets once none are still in progress. */
+/** Summarises a post's targets into the post's status. */
+export function summarizePostStatus(statuses: TargetStatus[]): PostStatus {
+  if (statuses.length > 0 && statuses.every((s) => s === "SCHEDULED")) return "SCHEDULED";
+  if (statuses.some((s) => s === "SCHEDULED" || s === "QUEUED" || s === "PUBLISHING" || s === "WAITING_FOR_MEDIA")) return "PUBLISHING";
+  const live = statuses.filter((s) => s !== "CANCELLED");
+  if (live.length === 0) return "CANCELLED";
+  const published = live.filter((s) => s === "PUBLISHED").length;
+  if (published === live.length) return "PUBLISHED";
+  return published > 0 ? "PARTIALLY_FAILED" : "FAILED";
+}
+
 export async function refreshPostStatus(postId: string) {
   const targets = await prisma.postTarget.findMany({ where: { postId }, select: { status: true } });
-  const pending = targets.some((t) => ["QUEUED", "PUBLISHING", "WAITING_FOR_MEDIA"].includes(t.status));
-  const published = targets.filter((t) => t.status === "PUBLISHED").length;
-  const status = pending
-    ? "PUBLISHING"
-    : published === targets.length
-      ? "PUBLISHED"
-      : published > 0
-        ? "PARTIALLY_FAILED"
-        : "FAILED";
-  await prisma.post.update({ where: { id: postId }, data: { status } });
+  await prisma.post.update({ where: { id: postId }, data: { status: summarizePostStatus(targets.map((t) => t.status)) } });
 }
 
 /** One worker tick: claim what's due and publish it. */

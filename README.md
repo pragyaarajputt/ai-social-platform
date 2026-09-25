@@ -2,7 +2,7 @@
 
 Connect your social accounts (Instagram first; LinkedIn, Facebook, Threads, X, YouTube and TikTok planned), write a post once with AI help, and publish or schedule it to every platform from one dashboard.
 
-**Status:** Phase 5. Connect Instagram, upload photos and videos, and **publish to one or more Instagram accounts** (single image, carousel, Reel). Scheduling comes next.
+**Status:** Phase 6. Connect Instagram, upload photos and videos, publish to one or more Instagram accounts (single image, carousel, Reel) **now or on a schedule**, and plan posts on a calendar. AI writing tools come next.
 
 > `docs/PRD.md` describes the original social-network idea and is out of date. The product is now a social media management tool.
 
@@ -22,9 +22,9 @@ Connect your social accounts (Instagram first; LinkedIn, Facebook, Threads, X, Y
 frontend/
   src/
     app/         pages: (auth)/ login, signup, forgot/reset password, verify email;
-                 (protected)/ account, accounts, posts (list, new, [id]); auth/callback
-    components/  ui/ primitives, auth/ forms and guards, accounts/, posts/, workspace/
-    lib/         API client, session, workspaces, posts + uploads, Instagram rules, form schemas
+                 (protected)/ account, accounts, calendar, posts (list, new, [id], [id]/edit); auth/callback
+    components/  ui/ primitives, auth/ forms and guards, accounts/, calendar/, posts/, workspace/
+    lib/         API client, session, workspaces, posts + uploads, dates, Instagram rules, form schemas
 backend/
   prisma/
     schema.prisma  database schema
@@ -159,10 +159,25 @@ Serving accounts you don't own needs Meta **app review** (advanced access).
 
 Needs `CLOUDINARY_*` in `backend/.env`, a connected Instagram account, and the worker running. Videos are sent as uploaded, so only MP4 and MOV are accepted for now.
 
+## Scheduling
+
+Pass `scheduledAt` (ISO 8601 with offset) when creating a post, or pick **Schedule** in the composer. Times are chosen and shown in the browser's own time zone and stored in UTC.
+
+| Rule | Detail |
+| --- | --- |
+| Window | At least 2 minutes and at most 365 days ahead |
+| Editing | `PATCH /workspaces/:id/posts/:postId` (caption, media, accounts, time; `scheduledAt: null` publishes now) and `POST …/cancel` work only until publishing starts; after that they return **409**. Edits lock the post's rows (`FOR UPDATE`), and the worker claims with `SKIP LOCKED`, so an edit and a publish never interleave |
+| Deleting | `DELETE …/posts/:postId` for posts never published anywhere (scheduled, cancelled or failed) |
+| Late posts | If the worker was down at the scheduled time, the post is published when it's back if less than 24 hours late; otherwise it's marked **missed** and not published. Retrying a missed post publishes it now |
+| Retries | Never change the chosen time (`scheduledAt`); only `nextAttemptAt` moves |
+| Warnings | Hourly, the worker looks for scheduled posts due in the next 24 hours whose account needs reconnecting or whose access expires first, and emails the author **once**. The dashboard (`GET …/posts/at-risk`), calendar and post page show the same warning |
+
+`GET /workspaces/:id/posts?from=&to=&status=` filters by date (a post's scheduled time, or creation time if published right away) and status. It feeds the calendar and the posts list tabs.
+
 ## Tests
 
 ```bash
-cd backend && npm test    # API integration tests (auth, workspaces, Instagram connect + publishing, with fake Instagram and Cloudinary APIs)
+cd backend && npm test    # API integration tests (auth, workspaces, Instagram connect, publishing, scheduling; fake Instagram and Cloudinary APIs)
 cd frontend && npm test   # API client and session unit tests
 ```
 
@@ -175,7 +190,7 @@ Backend tests run against a separate `social_test` database, derived from `DATAB
 | backend | `npm run dev` | Start with auto-reload (nodemon + tsx) |
 | backend | `npm run build` | Compile TypeScript to `dist/` |
 | backend | `npm start` | Run the compiled build |
-| backend | `npm run worker` | Run background jobs: publishing and token refresh. **Posts only go out while this runs** |
+| backend | `npm run worker` | Run background jobs: publishing (including scheduled posts), token refresh, scheduled-post warnings. **Posts only go out while this runs** |
 | backend | `npm run typecheck` | Type-check without emitting |
 | backend | `npm test` | Run API tests |
 | backend | `npm run db:migrate` | Create and apply migrations in development |

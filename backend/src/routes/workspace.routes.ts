@@ -5,7 +5,7 @@ import { authLimiter } from "../middleware/rateLimits.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireWorkspace } from "../middleware/requireWorkspace.js";
 import { validateBody } from "../middleware/validate.js";
-import { createPostSchema, registerMediaSchema } from "../schemas/post.schemas.js";
+import { createPostSchema, registerMediaSchema, updatePostSchema } from "../schemas/post.schemas.js";
 
 // /api/v1/workspaces
 export const workspaceRouter = Router();
@@ -23,7 +23,12 @@ workspaceRouter.delete("/:workspaceId/media/:mediaId", requireWorkspace("EDITOR"
 
 workspaceRouter.post("/:workspaceId/posts", requireWorkspace("EDITOR"), validateBody(createPostSchema), content.createPost);
 workspaceRouter.get("/:workspaceId/posts", requireWorkspace("VIEWER"), content.listPosts);
+// Before /posts/:postId, so "at-risk" isn't taken for a post ID.
+workspaceRouter.get("/:workspaceId/posts/at-risk", requireWorkspace("VIEWER"), content.listAtRisk);
 workspaceRouter.get("/:workspaceId/posts/:postId", requireWorkspace("VIEWER"), content.getPost);
+workspaceRouter.patch("/:workspaceId/posts/:postId", requireWorkspace("EDITOR"), validateBody(updatePostSchema), content.updatePost);
+workspaceRouter.post("/:workspaceId/posts/:postId/cancel", requireWorkspace("EDITOR"), content.cancelPost);
+workspaceRouter.delete("/:workspaceId/posts/:postId", requireWorkspace("EDITOR"), content.deletePost);
 workspaceRouter.post("/:workspaceId/posts/:postId/targets/:targetId/retry", requireWorkspace("EDITOR"), content.retryTarget);
 
 // /api/v1/integrations: called by the platforms, not by our frontend, so no requireAuth.

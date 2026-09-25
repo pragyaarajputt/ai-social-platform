@@ -1,5 +1,6 @@
 import type { RequestHandler } from "express";
 import * as media from "../services/media.service.js";
+import { listPostsQuerySchema } from "../schemas/post.schemas.js";
 import * as posts from "../services/post.service.js";
 import { AppError } from "../utils/AppError.js";
 
@@ -39,7 +40,26 @@ export const createPost: RequestHandler = async (req, res) => {
 };
 
 export const listPosts: RequestHandler = async (req, res) => {
-  res.json({ posts: await posts.listPosts(req.workspace!.id) });
+  // Express 5 makes req.query read-only, so parse it rather than validating in place.
+  const query = listPostsQuerySchema.parse(req.query);
+  res.json({ posts: await posts.listPosts(req.workspace!.id, query) });
+};
+
+export const listAtRisk: RequestHandler = async (req, res) => {
+  res.json({ atRisk: await posts.listAtRisk(req.workspace!.id) });
+};
+
+export const updatePost: RequestHandler = async (req, res) => {
+  res.json({ post: await posts.updatePost(req.workspace!.id, idParam(req.params.postId, "Post"), req.user!.id, req.body) });
+};
+
+export const cancelPost: RequestHandler = async (req, res) => {
+  res.json({ post: await posts.cancelPost(req.workspace!.id, idParam(req.params.postId, "Post"), req.user!.id) });
+};
+
+export const deletePost: RequestHandler = async (req, res) => {
+  await posts.deletePost(req.workspace!.id, idParam(req.params.postId, "Post"), req.user!.id);
+  res.status(204).end();
 };
 
 export const getPost: RequestHandler = async (req, res) => {

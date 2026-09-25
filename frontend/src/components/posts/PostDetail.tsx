@@ -1,24 +1,33 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { PageLoading } from "@/components/auth/RequireAuth";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { ApiError } from "@/lib/api";
+import { formatDateTime, formatRelative, localTimeZone } from "@/lib/dates";
 import { formatLabel } from "@/lib/instagramRules";
-import { getPost, isInProgress, retryTarget, type Post, type PostTarget } from "@/lib/posts";
+import { cancelPost, deletePost, getPost, isInProgress, retryTarget, riskMessage, updatePost, type Post, type PostTarget } from "@/lib/posts";
 import { PostStatusBadge } from "./PostStatusBadge";
 
 const POLL_MS = 3000;
+/** Scheduled posts are re-checked this often once their time is near, so the page follows along. */
+const NEAR_SCHEDULE_POLL_MS = 10_000;
+const NEAR_SCHEDULE_MS = 5 * 60_000;
+
+type Confirm = "cancel" | "publish" | "delete" | null;
 
 export function PostDetail({ postId }: { postId: string }) {
   const { workspace } = useWorkspace();
+  const router = useRouter();
   const workspaceId = workspace?.id;
   const [post, setPost] = useState<Post | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [retrying, setRetrying] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<Confirm>(null);
   const [refresh, setRefresh] = useState(0);
 
   const inProgress = post?.targets.some((t) => isInProgress(t.status)) ?? true;
@@ -33,8 +42,10 @@ export function PostDetail({ postId }: { postId: string }) {
           if (!active) return;
           setPost(p);
           setError(null);
-          // Keep polling while any account is still being published to.
           if (p.targets.some((t) => isInProgress(t.status))) timer = setTimeout(load, POLL_MS);
+          else if (p.status === "SCHEDULED" && p.scheduledAt && new Date(p.scheduledAt).getTime() - Date.now() < NEAR_SCHEDULE_MS) {
+            timer = setTimeout(load, NEAR_SCHEDULE_POLL_MS);
+          }
         },
         (err: unknown) => active && setError(err instanceof ApiError ? err.message : "Couldn't load this post."),
       );
@@ -48,21 +59,92 @@ export function PostDetail({ postId }: { postId: string }) {
   if (error && !post) return <Page><Alert tone="error">{error}</Alert></Page>;
   if (!post) return <PageLoading />;
 
-  async function retry(target: PostTarget) {
-    setRetrying(target.id);
+  async function run(key: string, action: () => Promise<Post | void>) {
+    setBusy(key);
+    setError(null);
     try {
-      setPost(await retryTarget(workspaceId!, postId, target.id));
+      const updated = await action();
+      if (updated) setPost(updated);
+      setConfirm(null);
       setRefresh((r) => r + 1); // restart polling
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't retry. Try again.");
+      setError(err instanceof ApiError ? err.message : "That didn't work. Try again.");
     } finally {
-      setRetrying(null);
+      setBusy(null);
     }
   }
 
+  const scheduled = post.status === "SCHEDULED";
+  const deletable = (post.status === "SCHEDULED" || post.status === "CANCELLED" || post.status === "FAILED") && !post.targets.some((t) => t.permalink);
+  const risky = post.targets.filter((t) => t.risk);
+
   return (
-    <Page status={post}>
+    <Page post={post}>
       {error ? <Alert tone="error">{error}</Alert> : null}
+
+      {scheduled && post.scheduledAt ? (
+        <div className="mt-4 rounded-2xl border border-neutral-200 p-4 dark:border-neutral-800">
+          <p className="text-sm">
+            Scheduled for <strong>{formatDateTime(new Date(post.scheduledAt))}</strong>{" "}
+            <span className="text-neutral-500">
+              ({formatRelative(new Date(post.scheduledAt))} · {localTimeZone()})
+            </span>
+          </p>
+          {risky.length > 0 ? (
+            <ul className="mt-3 flex flex-col gap-1 text-sm text-amber-800 dark:text-amber-300">
+              {risky.map((t) => (
+                <li key={t.id}>
+                  ⚠ {riskMessage(t.risk!, t.account.username)}{" "}
+                  <Link href="/accounts" className="font-medium underline">
+                    Fix
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {confirm === "publish" || confirm === "cancel" ? (
+            <div className="mt-4 flex flex-col gap-2 rounded-xl bg-neutral-50 p-3 text-sm dark:bg-neutral-900">
+              <p>{confirm === "publish" ? "Publish this post now instead of at the scheduled time?" : "Cancel this scheduled post? It won't be published."}</p>
+              <div className="flex gap-2">
+                <Button variant="secondary" disabled={busy !== null} onClick={() => setConfirm(null)}>
+                  Keep scheduled
+                </Button>
+                <Button
+                  variant={confirm === "cancel" ? "danger" : "primary"}
+                  loading={busy === confirm}
+                  onClick={() =>
+                    run(confirm, () =>
+                      confirm === "publish" ? updatePost(workspaceId!, postId, { scheduledAt: null }) : cancelPost(workspaceId!, postId),
+                    )
+                  }
+                >
+                  {confirm === "publish" ? "Publish now" : "Cancel post"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link
+                href={`/posts/${post.id}/edit`}
+                className="inline-flex h-10 items-center rounded-lg bg-foreground px-4 text-sm font-medium text-background"
+              >
+                Edit
+              </Link>
+              <div>
+                <Button variant="secondary" onClick={() => setConfirm("publish")}>
+                  Publish now
+                </Button>
+              </div>
+              <div>
+                <Button variant="secondary" onClick={() => setConfirm("cancel")}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
+
       <div className="mt-4 flex gap-3 overflow-x-auto">
         {post.media.map((m, i) => (
           // eslint-disable-next-line @next/next/no-img-element
@@ -74,61 +156,98 @@ export function PostDetail({ postId }: { postId: string }) {
       <h2 className="mt-8 text-sm font-medium text-neutral-500">Accounts</h2>
       <ul className="mt-2 flex flex-col gap-3">
         {post.targets.map((t) => (
-          <li key={t.id} className="rounded-2xl border border-neutral-200 p-4 dark:border-neutral-800">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-medium">@{t.account.username}</p>
-                <p className="text-sm text-neutral-500">Instagram · {formatLabel[t.format]}</p>
-              </div>
-              <PostStatusBadge status={t.status} />
-            </div>
-            {t.status === "PUBLISHED" ? (
-              <p className="mt-3 text-sm">
-                {t.permalink ? (
-                  <a href={t.permalink} target="_blank" rel="noopener noreferrer" className="font-medium underline">
-                    View on Instagram ↗
-                  </a>
-                ) : (
-                  <span className="text-neutral-500">Published. Instagram didn&apos;t return a link.</span>
-                )}
-              </p>
-            ) : null}
-            {t.status === "QUEUED" && t.attempts > 0 ? (
-              <p className="mt-3 text-sm text-neutral-500">
-                Attempt {t.attempts} didn&apos;t work ({t.lastError}). Trying again
-                {t.nextAttemptAt ? ` at ${new Date(t.nextAttemptAt).toLocaleTimeString()}` : " soon"}.
-              </p>
-            ) : null}
-            {t.status === "WAITING_FOR_MEDIA" ? (
-              <p className="mt-3 text-sm text-neutral-500">Instagram is processing the video. This can take a few minutes.</p>
-            ) : null}
-            {t.status === "FAILED" ? (
-              <div className="mt-3 flex flex-col gap-3">
-                <p className="text-sm text-red-700 dark:text-red-400">{t.lastError}</p>
-                <div className="flex gap-2">
-                  {t.account.status === "ACTIVE" ? (
-                    <div>
-                      <Button variant="secondary" loading={retrying === t.id} onClick={() => retry(t)}>
-                        Retry
-                      </Button>
-                    </div>
-                  ) : (
-                    <Link href="/accounts" className="text-sm font-medium underline">
-                      Reconnect @{t.account.username}, then retry
-                    </Link>
-                  )}
-                </div>
-              </div>
-            ) : null}
-          </li>
+          <TargetRow key={t.id} target={t} retrying={busy === t.id} onRetry={() => run(t.id, () => retryTarget(workspaceId!, postId, t.id))} />
         ))}
       </ul>
       {inProgress ? <p className="mt-4 text-xs text-neutral-500">This page updates automatically.</p> : null}
+
+      {deletable ? (
+        <div className="mt-10 border-t border-neutral-200 pt-4 dark:border-neutral-800">
+          {confirm === "delete" ? (
+            <div className="flex flex-col gap-2 text-sm">
+              <p>Delete this post? This can&apos;t be undone.</p>
+              <div className="flex gap-2">
+                <Button variant="secondary" disabled={busy !== null} onClick={() => setConfirm(null)}>
+                  Keep it
+                </Button>
+                <Button
+                  variant="danger"
+                  loading={busy === "delete"}
+                  onClick={() =>
+                    run("delete", async () => {
+                      await deletePost(workspaceId!, postId);
+                      router.replace("/posts");
+                    })
+                  }
+                >
+                  Delete post
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setConfirm("delete")} className="text-sm text-red-600 hover:underline">
+              Delete post
+            </button>
+          )}
+        </div>
+      ) : null}
     </Page>
   );
 }
 
-function Page({ children, status }: { children: React.ReactNode; status?: Post }) {
+function TargetRow({ target: t, retrying, onRetry }: { target: PostTarget; retrying: boolean; onRetry: () => void }) {
+  return (
+    <li className="rounded-2xl border border-neutral-200 p-4 dark:border-neutral-800">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="font-medium">@{t.account.username}</p>
+          <p className="text-sm text-neutral-500">Instagram · {formatLabel[t.format]}</p>
+        </div>
+        <PostStatusBadge status={t.status} />
+      </div>
+      {t.status === "PUBLISHED" ? (
+        <p className="mt-3 text-sm">
+          {t.permalink ? (
+            <a href={t.permalink} target="_blank" rel="noopener noreferrer" className="font-medium underline">
+              View on Instagram ↗
+            </a>
+          ) : (
+            <span className="text-neutral-500">Published. Instagram didn&apos;t return a link.</span>
+          )}
+        </p>
+      ) : null}
+      {t.status === "QUEUED" && t.attempts > 0 ? (
+        <p className="mt-3 text-sm text-neutral-500">
+          Attempt {t.attempts} didn&apos;t work ({t.lastError}). Trying again
+          {t.nextAttemptAt ? ` at ${new Date(t.nextAttemptAt).toLocaleTimeString()}` : " soon"}.
+        </p>
+      ) : null}
+      {t.status === "WAITING_FOR_MEDIA" ? (
+        <p className="mt-3 text-sm text-neutral-500">Instagram is processing the video. This can take a few minutes.</p>
+      ) : null}
+      {t.status === "FAILED" ? (
+        <div className="mt-3 flex flex-col gap-3">
+          <p className="text-sm text-red-700 dark:text-red-400">{t.lastError}</p>
+          <div className="flex gap-2">
+            {t.account.status === "ACTIVE" ? (
+              <div>
+                <Button variant="secondary" loading={retrying} onClick={onRetry}>
+                  Retry
+                </Button>
+              </div>
+            ) : (
+              <Link href="/accounts" className="text-sm font-medium underline">
+                Reconnect @{t.account.username}, then retry
+              </Link>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+function Page({ children, post }: { children: React.ReactNode; post?: Post }) {
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-10">
       <Link href="/posts" className="text-sm text-neutral-500 hover:underline">
@@ -136,9 +255,9 @@ function Page({ children, status }: { children: React.ReactNode; status?: Post }
       </Link>
       <div className="mt-2 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Post</h1>
-        {status ? <PostStatusBadge status={status.status} /> : null}
+        {post ? <PostStatusBadge status={post.status} /> : null}
       </div>
-      {status ? <p className="text-sm text-neutral-500">Created {new Date(status.createdAt).toLocaleString()}</p> : null}
+      {post ? <p className="text-sm text-neutral-500">Created {new Date(post.createdAt).toLocaleString()}</p> : null}
       {children}
     </div>
   );

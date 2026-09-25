@@ -310,11 +310,14 @@ enum MediaType {
 
 enum PostStatus {
   DRAFT
+  /// Every account is waiting for the scheduled time.
+  SCHEDULED
   PUBLISHING
   PUBLISHED
   /// Published to some accounts, failed on others.
   PARTIALLY_FAILED
   FAILED
+  CANCELLED
 
   @@map("post_status")
 }
@@ -328,6 +331,8 @@ enum PostFormat {
 }
 
 enum TargetStatus {
+  /// Waiting for its scheduled time; can still be edited or cancelled.
+  SCHEDULED
   QUEUED
   PUBLISHING
   /// The platform is still processing uploaded video; checked again later.
@@ -372,6 +377,8 @@ model Post {
   authorId    String?    @map("author_id") @db.Uuid
   caption     String     @default("")
   status      PostStatus @default(DRAFT)
+  /// When the post should go out (UTC). Null means "publish now".
+  scheduledAt DateTime?  @map("scheduled_at") @db.Timestamptz(3)
   createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -381,6 +388,7 @@ model Post {
   targets   PostTarget[]
 
   @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([workspaceId, scheduledAt])
   @@map("posts")
 }
 
@@ -400,26 +408,30 @@ model PostMedia {
 /// One post going to one account. Also the publish job: the worker claims rows whose
 /// next_attempt_at has passed (SELECT ... FOR UPDATE SKIP LOCKED), see jobs/publishQueue.ts.
 model PostTarget {
-  id              String       @id @default(uuid(7)) @db.Uuid
-  postId          String       @map("post_id") @db.Uuid
-  socialAccountId String       @map("social_account_id") @db.Uuid
-  captionOverride String?      @map("caption_override")
-  format          PostFormat
-  status          TargetStatus @default(QUEUED)
+  id                String       @id @default(uuid(7)) @db.Uuid
+  postId            String       @map("post_id") @db.Uuid
+  socialAccountId   String       @map("social_account_id") @db.Uuid
+  captionOverride   String?      @map("caption_override")
+  format            PostFormat
+  status            TargetStatus @default(QUEUED)
+  /// The time the user chose. Unlike next_attempt_at, retries never change it.
+  scheduledAt       DateTime?    @map("scheduled_at") @db.Timestamptz(3)
+  /// When the "this scheduled post will probably fail" warning was sent, so it is sent only once.
+  preflightWarnedAt DateTime?    @map("preflight_warned_at") @db.Timestamptz(3)
   /// When the worker should next pick this up (publish time now; scheduled time in Phase 6).
-  nextAttemptAt   DateTime?    @map("next_attempt_at") @db.Timestamptz(3)
+  nextAttemptAt     DateTime?    @map("next_attempt_at") @db.Timestamptz(3)
   /// Set while a worker is processing it; an expired lock means the worker died.
-  lockedUntil     DateTime?    @map("locked_until") @db.Timestamptz(3)
-  attempts        Int          @default(0)
+  lockedUntil       DateTime?    @map("locked_until") @db.Timestamptz(3)
+  attempts          Int          @default(0)
   /// Platform progress saved as soon as it happens (e.g. container IDs), so retries never repeat a step.
-  platformState   Json         @default("{}") @map("platform_state")
-  externalPostId  String?      @map("external_post_id") @db.VarChar(100)
-  permalink       String?
-  publishedAt     DateTime?    @map("published_at") @db.Timestamptz(3)
-  lastErrorCode   String?      @map("last_error_code") @db.VarChar(40)
-  lastError       String?      @map("last_error")
-  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  platformState     Json         @default("{}") @map("platform_state")
+  externalPostId    String?      @map("external_post_id") @db.VarChar(100)
+  permalink         String?
+  publishedAt       DateTime?    @map("published_at") @db.Timestamptz(3)
+  lastErrorCode     String?      @map("last_error_code") @db.VarChar(40)
+  lastError         String?      @map("last_error")
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   post          Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
   socialAccount SocialAccount    @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)

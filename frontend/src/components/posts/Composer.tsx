@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/Button";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { ApiError } from "@/lib/api";
 import { countHashtags, countMentions, formatLabel, INSTAGRAM, instagramFormat, instagramProblems } from "@/lib/instagramRules";
-import { createPost, uploadMedia, type MediaItem } from "@/lib/posts";
+import { formatDateTime, formatRelative, fromDateTimeLocal, localTimeZone, toDateTimeLocal, useNow } from "@/lib/dates";
+import { createPost, updatePost, uploadMedia, type MediaItem, type Post } from "@/lib/posts";
 import { listSocialAccounts, type SocialAccount } from "@/lib/workspaces";
 
 interface Upload {
@@ -21,18 +22,30 @@ interface Upload {
 
 const ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime";
 
-export function Composer() {
+/** Earliest time the picker offers; the server requires at least 2 minutes. */
+const MIN_LEAD_MS = 5 * 60_000;
+const SERVER_MIN_LEAD_MS = 2 * 60_000;
+
+/** Creates a post, or edits `initialPost` (a scheduled post) when given. */
+export function Composer({ initialPost }: { initialPost?: Post }) {
   const { workspace } = useWorkspace();
   const router = useRouter();
   const workspaceId = workspace?.id;
+  const editing = initialPost !== undefined;
 
   const [accounts, setAccounts] = useState<SocialAccount[] | null>(null);
-  const [caption, setCaption] = useState("");
-  const [media, setMedia] = useState<MediaItem[]>([]);
+  const [caption, setCaption] = useState(initialPost?.caption ?? "");
+  const [media, setMedia] = useState<MediaItem[]>(initialPost?.media ?? []);
   const [uploads, setUploads] = useState<Upload[]>([]);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [overrides, setOverrides] = useState<Record<string, string | undefined>>({});
+  const [selected, setSelected] = useState<string[]>(initialPost?.targets.map((t) => t.account.id) ?? []);
+  const [overrides, setOverrides] = useState<Record<string, string | undefined>>(
+    Object.fromEntries(initialPost?.targets.filter((t) => t.caption !== null).map((t) => [t.account.id, t.caption!]) ?? []),
+  );
+  const [mode, setMode] = useState<"now" | "schedule">(initialPost?.scheduledAt ? "schedule" : "now");
+  const initialWhen = initialPost?.scheduledAt ? toDateTimeLocal(new Date(initialPost.scheduledAt)) : "";
+  const [when, setWhen] = useState(initialWhen);
   const [submitting, setSubmitting] = useState(false);
+  const now = useNow();
   const [serverErrors, setServerErrors] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -45,16 +58,16 @@ export function Composer() {
       ({ accounts }) => {
         if (!active) return;
         setAccounts(accounts);
-        // Preselect when there's exactly one account ready to publish.
+        // New posts: preselect when there's exactly one account ready to publish.
         const ready = accounts.filter((a) => a.status === "ACTIVE");
-        if (ready.length === 1) setSelected([ready[0]!.id]);
+        if (!editing && ready.length === 1) setSelected([ready[0]!.id]);
       },
       () => active && setAccounts([]),
     );
     return () => {
       active = false;
     };
-  }, [workspaceId]);
+  }, [workspaceId, editing]);
 
   if (!workspaceId || accounts === null) return <PageLoading />;
 
@@ -63,7 +76,29 @@ export function Composer() {
   const format = instagramFormat(media);
   const uploading = uploads.some((u) => !u.error);
   const problemsFor = (accountId: string) => instagramProblems(overrides[accountId] ?? caption, media);
-  const problems = Array.from(new Set(selected.flatMap(problemsFor)));
+  const scheduledFor = mode === "schedule" ? fromDateTimeLocal(when) : null;
+  // Mirrors the server: only a newly chosen time has to be at least 2 minutes ahead.
+  const timeChanged = !editing || when !== initialWhen || mode !== "schedule";
+  const scheduleProblem =
+    mode !== "schedule"
+      ? null
+      : !scheduledFor
+        ? "Pick a date and time."
+        : timeChanged && scheduledFor.getTime() - now < SERVER_MIN_LEAD_MS
+          ? "Pick a time at least a few minutes from now, or publish now."
+          : null;
+  // Selected accounts that can't be published to (e.g. an edited post whose account now needs
+  // reconnecting, or was disconnected). They must be removed or reconnected before saving.
+  const staleSelected = selected.filter((id) => !ready.some((a) => a.id === id));
+  const staleName = (id: string) =>
+    accounts.find((a) => a.id === id)?.username ?? initialPost?.targets.find((t) => t.account.id === id)?.account.username ?? "an account";
+  const problems = Array.from(
+    new Set([
+      ...selected.filter((id) => !staleSelected.includes(id)).flatMap(problemsFor),
+      ...staleSelected.map((id) => `Remove @${staleName(id)} or reconnect it first.`),
+      ...(scheduleProblem ? [scheduleProblem] : []),
+    ]),
+  );
   const canPublish = selected.length > 0 && problems.length === 0 && !uploading && !submitting;
 
   function addFiles(files: FileList | File[]) {
@@ -95,12 +130,19 @@ export function Composer() {
   async function publish() {
     setSubmitting(true);
     setServerErrors([]);
+    const content = {
+      caption,
+      mediaIds: media.map((m) => m.id),
+      targets: selected.map((id) => ({ socialAccountId: id, captionOverride: overrides[id] })),
+    };
     try {
-      const post = await createPost(workspaceId!, {
-        caption,
-        mediaIds: media.map((m) => m.id),
-        targets: selected.map((id) => ({ socialAccountId: id, captionOverride: overrides[id] })),
-      });
+      const post = editing
+        ? await updatePost(workspaceId!, initialPost.id, {
+            ...content,
+            // Unchanged time: leave it out, so the server keeps it as is.
+            ...(timeChanged && { scheduledAt: scheduledFor ? scheduledFor.toISOString() : null }),
+          })
+        : await createPost(workspaceId!, { ...content, ...(scheduledFor && { scheduledAt: scheduledFor.toISOString() }) });
       router.push(`/posts/${post.id}`);
     } catch (err) {
       if (err instanceof ApiError && err.fieldErrors.length) setServerErrors(err.fieldErrors.map((f) => f.message));
@@ -123,7 +165,7 @@ export function Composer() {
   }
 
   return (
-    <Page>
+    <Page title={editing ? "Edit scheduled post" : "Create post"}>
       <div className="grid gap-8 lg:grid-cols-[1fr_18rem]">
         <div className="flex flex-col gap-6">
           {/* Media */}
@@ -293,9 +335,34 @@ export function Composer() {
                 );
               })}
             </ul>
-            {notReady.length > 0 ? (
+            {staleSelected.length > 0 ? (
+              <ul className="mt-2 flex flex-col gap-2">
+                {staleSelected.map((id) => (
+                  <li
+                    key={id}
+                    className="flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200"
+                  >
+                    <span>
+                      @{staleName(id)} can&apos;t be published to until it&apos;s{" "}
+                      <Link href="/accounts" className="underline">
+                        reconnected
+                      </Link>
+                      .
+                    </span>
+                    <button type="button" onClick={() => setSelected((s) => s.filter((x) => x !== id))} className="shrink-0 font-medium underline">
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {notReady.some((a) => !selected.includes(a.id)) ? (
               <p className="mt-2 text-xs text-neutral-500">
-                {notReady.map((a) => `@${a.username}`).join(", ")} {notReady.length === 1 ? "needs" : "need"} reconnecting.{" "}
+                {notReady
+                  .filter((a) => !selected.includes(a.id))
+                  .map((a) => `@${a.username}`)
+                  .join(", ")}{" "}
+                {notReady.filter((a) => !selected.includes(a.id)).length === 1 ? "needs" : "need"} reconnecting.{" "}
                 <Link href="/accounts" className="underline">
                   Fix
                 </Link>
@@ -326,8 +393,48 @@ export function Composer() {
             </Alert>
           ) : null}
 
+          <section aria-labelledby="when-heading" className="flex flex-col gap-2">
+            <h2 id="when-heading" className="text-sm font-medium">
+              When
+            </h2>
+            <div className="flex gap-4 text-sm">
+              <label className="flex items-center gap-2">
+                <input type="radio" name="when" checked={mode === "now"} onChange={() => setMode("now")} />
+                Publish now
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="when"
+                  checked={mode === "schedule"}
+                  onChange={() => {
+                    setMode("schedule");
+                    if (!when) setWhen(toDateTimeLocal(new Date(Date.now() + 60 * 60_000)));
+                  }}
+                />
+                Schedule
+              </label>
+            </div>
+            {mode === "schedule" ? (
+              <>
+                <input
+                  type="datetime-local"
+                  aria-label="Publish date and time"
+                  value={when}
+                  min={toDateTimeLocal(new Date(now + MIN_LEAD_MS))}
+                  onChange={(e) => setWhen(e.target.value)}
+                  className="h-10 rounded-lg border border-neutral-300 bg-transparent px-3 text-sm dark:border-neutral-700"
+                />
+                <p className="text-xs text-neutral-500">
+                  {scheduledFor ? `${formatDateTime(scheduledFor)} (${formatRelative(scheduledFor, new Date(now))}) · ` : ""}
+                  Times in {localTimeZone()}
+                </p>
+              </>
+            ) : null}
+          </section>
+
           <Button onClick={publish} disabled={!canPublish} loading={submitting}>
-            Publish now
+            {editing ? (mode === "now" ? "Save and publish now" : "Save changes") : mode === "now" ? "Publish now" : "Schedule"}
           </Button>
           {selected.length === 0 ? <p className="text-center text-xs text-neutral-500">Choose at least one account.</p> : null}
           {uploading ? <p className="text-center text-xs text-neutral-500">Waiting for uploads to finish…</p> : null}
@@ -354,10 +461,10 @@ function CaptionCounters({ text }: { text: string }) {
   );
 }
 
-function Page({ children }: { children: React.ReactNode }) {
+function Page({ children, title = "Create post" }: { children: React.ReactNode; title?: string }) {
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-10">
-      <h1 className="text-2xl font-semibold">Create post</h1>
+      <h1 className="text-2xl font-semibold">{title}</h1>
       <div className="mt-6">{children}</div>
     </div>
   );

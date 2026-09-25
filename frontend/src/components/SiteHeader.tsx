@@ -21,6 +21,9 @@ export function SiteHeader() {
               <Link href="/posts" className="hover:underline">
                 Posts
               </Link>
+              <Link href="/calendar" className="hover:underline">
+                Calendar
+              </Link>
               <Link href="/accounts" className="hover:underline">
                 Accounts
               </Link>

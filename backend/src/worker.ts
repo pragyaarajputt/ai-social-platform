@@ -1,11 +1,13 @@
 import { prisma } from "./config/database.js";
 import { env } from "./config/env.js";
 import { runPublishCycle } from "./jobs/publishQueue.js";
+import { runPreflightChecks } from "./services/preflight.service.js";
 import { purgeExpiredConnectStates, refreshDueTokens } from "./services/tokenRefresh.service.js";
 
 // Background jobs. Run with `npm run worker`, separately from the API. Safe to run several:
-// - publishing: every few seconds; rows are claimed with SKIP LOCKED, so no post is taken twice;
-// - maintenance (token refresh): hourly, guarded by a Postgres advisory lock.
+// - publishing (including scheduled posts once due): every few seconds; rows are claimed with
+//   SKIP LOCKED, so no post is taken twice;
+// - maintenance (token refresh, scheduled-post warnings): hourly, guarded by a Postgres advisory lock.
 
 const MAINTENANCE_INTERVAL_MS = 60 * 60_000;
 const MAINTENANCE_LOCK_ID = 7_310_001; // arbitrary constant: "token refresh"
@@ -25,7 +27,12 @@ async function runMaintenance() {
         }
         const summary = await refreshDueTokens();
         const purged = await purgeExpiredConnectStates();
-        console.log(`[worker] token refresh: ${JSON.stringify(summary)}; expired connect states purged: ${purged}`);
+        // After refreshing, so accounts whose tokens were just renewed aren't flagged.
+        const preflight = await runPreflightChecks();
+        console.log(
+          `[worker] token refresh: ${JSON.stringify(summary)}; expired connect states purged: ${purged}; ` +
+            `scheduled-post warnings: ${JSON.stringify(preflight)}`,
+        );
       },
       { maxWait: 5_000, timeout: 10 * 60_000 },
     );

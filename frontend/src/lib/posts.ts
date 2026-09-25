@@ -14,32 +14,42 @@ export interface MediaItem {
   createdAt: string;
 }
 
-export type PostStatus = "DRAFT" | "PUBLISHING" | "PUBLISHED" | "PARTIALLY_FAILED" | "FAILED";
-export type TargetStatus = "QUEUED" | "PUBLISHING" | "WAITING_FOR_MEDIA" | "PUBLISHED" | "FAILED" | "CANCELLED";
+export type PostStatus = "DRAFT" | "SCHEDULED" | "PUBLISHING" | "PUBLISHED" | "PARTIALLY_FAILED" | "FAILED" | "CANCELLED";
+export type TargetStatus = "SCHEDULED" | "QUEUED" | "PUBLISHING" | "WAITING_FOR_MEDIA" | "PUBLISHED" | "FAILED" | "CANCELLED";
+
+/** Why a scheduled target will probably fail (computed by the server). */
+export type TargetRisk = "ACCOUNT_NEEDS_RECONNECT" | "ACCESS_EXPIRES_BEFORE_POST" | null;
 
 export interface PostTarget {
   id: string;
   format: "IMAGE" | "CAROUSEL" | "REEL";
   status: TargetStatus;
   caption: string | null;
+  scheduledAt: string | null;
   permalink: string | null;
   publishedAt: string | null;
   nextAttemptAt: string | null;
   attempts: number;
   lastErrorCode: string | null;
   lastError: string | null;
-  account: Pick<SocialAccount, "id" | "platform" | "username" | "name" | "avatarUrl" | "status">;
+  risk: TargetRisk;
+  account: Pick<SocialAccount, "id" | "platform" | "username" | "name" | "avatarUrl" | "status"> & { tokenExpiresAt: string | null };
 }
 
 export interface Post {
   id: string;
   caption: string;
   status: PostStatus;
+  /** Null when the post was published right away. */
+  scheduledAt: string | null;
   createdAt: string;
   updatedAt: string;
-  media: Pick<MediaItem, "id" | "type" | "width" | "height" | "thumbnailUrl">[];
+  media: MediaItem[];
   targets: PostTarget[];
 }
+
+/** The date a post belongs to on the calendar: its scheduled time, or creation time if published right away. */
+export const postDate = (p: Pick<Post, "scheduledAt" | "createdAt">) => new Date(p.scheduledAt ?? p.createdAt);
 
 // ─── Media ──────────────────────────────────────────────────────────────────
 
@@ -93,15 +103,57 @@ export interface CreatePostInput {
   caption: string;
   mediaIds: string[];
   targets: { socialAccountId: string; captionOverride?: string }[];
+  /** ISO time; omit to publish now. */
+  scheduledAt?: string;
 }
 
 export async function createPost(workspaceId: string, input: CreatePostInput): Promise<Post> {
   return (await api<{ post: Post }>(`/workspaces/${workspaceId}/posts`, { method: "POST", body: input })).post;
 }
 
-export async function listPosts(workspaceId: string): Promise<Post[]> {
-  return (await api<{ posts: Post[] }>(`/workspaces/${workspaceId}/posts`)).posts;
+/** Edits a scheduled post. `scheduledAt: null` publishes it now. */
+export async function updatePost(
+  workspaceId: string,
+  postId: string,
+  input: Partial<Omit<CreatePostInput, "scheduledAt">> & { scheduledAt?: string | null },
+): Promise<Post> {
+  return (await api<{ post: Post }>(`/workspaces/${workspaceId}/posts/${postId}`, { method: "PATCH", body: input })).post;
 }
+
+export async function cancelPost(workspaceId: string, postId: string): Promise<Post> {
+  return (await api<{ post: Post }>(`/workspaces/${workspaceId}/posts/${postId}/cancel`, { method: "POST" })).post;
+}
+
+export function deletePost(workspaceId: string, postId: string): Promise<void> {
+  return api(`/workspaces/${workspaceId}/posts/${postId}`, { method: "DELETE" });
+}
+
+export async function listPosts(workspaceId: string, query: { from?: Date; to?: Date; status?: PostStatus[] } = {}): Promise<Post[]> {
+  const params = new URLSearchParams();
+  if (query.from) params.set("from", query.from.toISOString());
+  if (query.to) params.set("to", query.to.toISOString());
+  if (query.status?.length) params.set("status", query.status.join(","));
+  const qs = params.toString();
+  return (await api<{ posts: Post[] }>(`/workspaces/${workspaceId}/posts${qs ? `?${qs}` : ""}`)).posts;
+}
+
+export interface AtRiskItem {
+  postId: string;
+  targetId: string;
+  caption: string;
+  scheduledAt: string;
+  account: { id: string; username: string | null };
+  risk: Exclude<TargetRisk, null>;
+}
+
+export async function listAtRisk(workspaceId: string): Promise<AtRiskItem[]> {
+  return (await api<{ atRisk: AtRiskItem[] }>(`/workspaces/${workspaceId}/posts/at-risk`)).atRisk;
+}
+
+export const riskMessage = (risk: Exclude<TargetRisk, null>, username: string | null) =>
+  risk === "ACCOUNT_NEEDS_RECONNECT"
+    ? `@${username} needs to be reconnected, or this post will fail.`
+    : `@${username}'s access expires before the post time. Reconnect it to renew access.`;
 
 export async function getPost(workspaceId: string, postId: string): Promise<Post> {
   return (await api<{ post: Post }>(`/workspaces/${workspaceId}/posts/${postId}`)).post;

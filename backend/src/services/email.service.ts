@@ -42,3 +42,20 @@ export function sendPasswordResetEmail(to: string, token: string): Promise<void>
     text: `Someone asked to reset your password. If that was you, open this link:\n\n${link}\n\nThe link expires in 1 hour. If you didn't ask for this, you can ignore this email.`,
   });
 }
+
+/** Sent once, about a day ahead, when a scheduled post will probably fail. */
+export function sendScheduledPostWarning(
+  to: string,
+  warning: { postId: string; caption: string; scheduledAt: Date; problems: string[] },
+): Promise<void> {
+  const link = `${env.appUrl}/posts/${warning.postId}`;
+  const excerpt = warning.caption.length > 80 ? `${warning.caption.slice(0, 80)}…` : warning.caption || "(no caption)";
+  return send({
+    to,
+    subject: "A scheduled post needs your attention",
+    text:
+      `Your post scheduled for ${warning.scheduledAt.toUTCString()} will probably fail:\n\n` +
+      warning.problems.map((p) => `  • ${p}`).join("\n") +
+      `\n\n"${excerpt}"\n\nFix it here: ${link}`,
+  });
+}

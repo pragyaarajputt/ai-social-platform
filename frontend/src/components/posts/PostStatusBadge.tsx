@@ -10,6 +10,7 @@ const styles = {
 
 const labels: Record<PostStatus | TargetStatus, [string, keyof typeof styles]> = {
   DRAFT: ["Draft", "neutral"],
+  SCHEDULED: ["Scheduled", "neutral"],
   QUEUED: ["Queued", "progress"],
   PUBLISHING: ["Publishing…", "progress"],
   WAITING_FOR_MEDIA: ["Processing video…", "progress"],
