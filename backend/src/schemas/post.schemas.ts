@@ -21,6 +21,8 @@ export const createPostSchema = z.object({
   targets,
   /** Omit to publish now. */
   scheduledAt: scheduledAt.optional(),
+  /** An AI suggestion was applied while writing it. */
+  aiAssisted: z.boolean().default(false),
 });
 
 /** Every field is optional; `scheduledAt: null` means "publish now". */
@@ -29,6 +31,7 @@ export const updatePostSchema = z.object({
   mediaIds: z.array(uuid).max(10, "At most 10 media per post").optional(),
   targets: targets.optional(),
   scheduledAt: scheduledAt.nullable().optional(),
+  aiAssisted: z.boolean().optional(),
 });
 
 export const listPostsQuerySchema = z.object({

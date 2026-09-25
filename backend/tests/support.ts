@@ -1,4 +1,4 @@
-// Shared test support: a fake Instagram Graph API and Cloudinary (installed over global fetch), and
+// Shared test support: a fake Instagram Graph API, Cloudinary and Claude API (installed over global fetch), and
 // helpers to create users, connected accounts, media and posts.
 import request from "supertest";
 import { expect, vi } from "vitest";
@@ -28,6 +28,12 @@ interface Fake {
   /** Respond to container creation with these errors first. */
   createFailures: { status: number; body: unknown }[];
   cloudinary: Map<string, Record<string, unknown>>;
+  claude: {
+    /** Request bodies sent to the Claude API, with their beta header. */
+    requests: { body: Record<string, any>; beta: string | null }[];
+    /** Responses for the next calls, in order; when empty, a plain OK reply is used. */
+    replies: Response[];
+  };
 }
 export let fake: Fake;
 
@@ -48,6 +54,7 @@ export function installFakes() {
     publishFailures: [],
     createFailures: [],
     cloudinary: new Map(),
+    claude: { requests: [], replies: [] },
   };
   const realFetch = globalThis.fetch;
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -59,6 +66,13 @@ export function installFakes() {
       const m = /^\/v1_1\/test-cloud\/resources\/(image|video)\/upload\/(.+)$/.exec(url.pathname);
       const resource = m ? fake.cloudinary.get(decodeURIComponent(m[2]!)) : undefined;
       return resource && resource.resource_type === m![1] ? json(200, resource) : json(404, { error: { message: "not found" } });
+    }
+
+    if (url.host === "api.anthropic.com") {
+      const headers = new Headers(init?.headers);
+      if (headers.get("x-api-key") !== env.ai.apiKey) return json(401, { type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } });
+      fake.claude.requests.push({ body: JSON.parse(String(init?.body)), beta: headers.get("anthropic-beta") });
+      return fake.claude.replies.shift() ?? claudeReply({ captions: [{ text: "ok" }] });
     }
 
     if (url.host === "graph.instagram.com") {
@@ -100,6 +114,27 @@ export function installFakes() {
     }
     return realFetch(input, init);
   });
+}
+
+/** A Claude Messages API response whose text is `output` as JSON (what structured outputs return). */
+export function claudeReply(
+  output: unknown,
+  opts: { stopReason?: string; model?: string; usage?: Partial<Record<"input_tokens" | "output_tokens" | "cache_read_input_tokens" | "cache_creation_input_tokens", number>> } = {},
+) {
+  return json(200, {
+    id: "msg_test",
+    type: "message",
+    role: "assistant",
+    model: opts.model ?? "claude-opus-5",
+    content: opts.stopReason === "refusal" ? [] : [{ type: "text", text: typeof output === "string" ? output : JSON.stringify(output) }],
+    stop_reason: opts.stopReason ?? "end_turn",
+    stop_sequence: null,
+    usage: { input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, ...opts.usage },
+  });
+}
+
+export function claudeError(status: number, type: string) {
+  return json(status, { type: "error", error: { type, message: type } });
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

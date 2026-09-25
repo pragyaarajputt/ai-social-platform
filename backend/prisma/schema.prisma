@@ -95,6 +95,8 @@ model User {
   posts              Post[]
   auditLogs          AuditLog[]
   oauthConnectStates OAuthConnectState[]
+  aiRequests         AiRequest[]
+  brandVoiceEdits    BrandVoice[]
 
   @@map("users")
 }
@@ -192,6 +194,8 @@ model Workspace {
   auditLogs      AuditLog[]
   mediaAssets    MediaAsset[]
   posts          Post[]
+  aiRequests     AiRequest[]
+  brandVoice     BrandVoice?
 
   @@map("workspaces")
 }
@@ -379,6 +383,8 @@ model Post {
   status      PostStatus @default(DRAFT)
   /// When the post should go out (UTC). Null means "publish now".
   scheduledAt DateTime?  @map("scheduled_at") @db.Timestamptz(3)
+  /// An AI suggestion was applied while writing this post. For the workspace's own tracking only.
+  aiAssisted  Boolean    @default(false) @map("ai_assisted")
   createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -458,4 +464,83 @@ model PublishAttempt {
 
   @@index([postTargetId, startedAt])
   @@map("publish_attempts")
+}
+
+// ─── AI writing tools ────────────────────────────────────────────────────────
+
+enum AiFeature {
+  CAPTIONS
+  HASHTAGS
+  REWRITE
+
+  @@map("ai_feature")
+}
+
+enum AiRequestStatus {
+  /// Reserved against the daily limit; waiting for Claude.
+  PENDING
+  OK
+  /// Declined by Claude's safety classifiers (after any fallback).
+  REFUSED
+  ERROR
+  /// Not sent: the workspace's daily limit was reached.
+  QUOTA_EXCEEDED
+  /// Not sent: the server's daily spend cap was reached.
+  SPEND_CAP_REACHED
+
+  @@map("ai_request_status")
+}
+
+/// One AI writing request: usage and cost for limits and reporting, and whether the suggestion was used.
+model AiRequest {
+  id               String          @id @default(uuid(7)) @db.Uuid
+  workspaceId      String          @map("workspace_id") @db.Uuid
+  userId           String?         @map("user_id") @db.Uuid
+  feature          AiFeature
+  /// The model that answered (can differ from the configured one when a refusal fallback ran).
+  model            String          @db.VarChar(60)
+  /// Which prompt produced the output, e.g. "captions.v1", so prompt changes can be compared.
+  promptVersion    String          @map("prompt_version") @db.VarChar(30)
+  status           AiRequestStatus @default(PENDING)
+  errorCode        String?         @map("error_code") @db.VarChar(40)
+  inputTokens      Int             @default(0) @map("input_tokens")
+  outputTokens     Int             @default(0) @map("output_tokens")
+  cacheReadTokens  Int             @default(0) @map("cache_read_tokens")
+  cacheWriteTokens Int             @default(0) @map("cache_write_tokens")
+  /// Estimated cost in millionths of a US dollar.
+  costMicros       Int             @default(0) @map("cost_micros")
+  latencyMs        Int?            @map("latency_ms")
+  /// The suggestions returned, so feedback can be reviewed against them.
+  output           Json?
+  /// Which suggestion the user applied (0-based), if any.
+  appliedIndex     Int?            @map("applied_index")
+  /// 1 = thumbs up, -1 = thumbs down.
+  rating           Int?            @db.SmallInt
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  completedAt      DateTime?       @map("completed_at") @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([createdAt])
+  @@map("ai_requests")
+}
+
+/// How the workspace's brand sounds. Included in every AI prompt for the workspace.
+model BrandVoice {
+  workspaceId String   @id @map("workspace_id") @db.Uuid
+  tone        String?  @db.VarChar(200)
+  audience    String?  @db.VarChar(300)
+  dos         String?  @db.VarChar(1000)
+  donts       String?  @db.VarChar(1000)
+  samplePost  String?  @map("sample_post") @db.VarChar(2200)
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  updatedBy User?     @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("brand_voices")
 }

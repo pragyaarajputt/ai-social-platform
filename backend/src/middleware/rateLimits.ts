@@ -45,3 +45,13 @@ export const resendVerificationLimiter = rateLimit({
   keyGenerator: (req) => req.user?.id ?? clientIp(req),
   handler: tooMany("Too many verification emails. Try again in an hour."),
 });
+
+/** Per-user cap on AI writing requests, on top of each workspace's daily limit. Runs after requireAuth. */
+export const aiLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: env.ai.requestsPerMinute,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id ?? clientIp(req),
+  handler: tooMany("You're using AI very quickly. Wait a minute and try again."),
+});

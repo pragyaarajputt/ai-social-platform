@@ -1,10 +1,12 @@
 import express, { Router } from "express";
+import * as ai from "../controllers/ai.controller.js";
 import * as content from "../controllers/content.controller.js";
 import * as ws from "../controllers/workspace.controller.js";
-import { authLimiter } from "../middleware/rateLimits.js";
+import { aiLimiter, authLimiter } from "../middleware/rateLimits.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireWorkspace } from "../middleware/requireWorkspace.js";
 import { validateBody } from "../middleware/validate.js";
+import { brandVoiceSchema, captionsSchema, feedbackSchema, hashtagsSchema, rewriteSchema } from "../schemas/ai.schemas.js";
 import { createPostSchema, registerMediaSchema, updatePostSchema } from "../schemas/post.schemas.js";
 
 // /api/v1/workspaces
@@ -30,6 +32,15 @@ workspaceRouter.patch("/:workspaceId/posts/:postId", requireWorkspace("EDITOR"),
 workspaceRouter.post("/:workspaceId/posts/:postId/cancel", requireWorkspace("EDITOR"), content.cancelPost);
 workspaceRouter.delete("/:workspaceId/posts/:postId", requireWorkspace("EDITOR"), content.deletePost);
 workspaceRouter.post("/:workspaceId/posts/:postId/targets/:targetId/retry", requireWorkspace("EDITOR"), content.retryTarget);
+
+// AI writing tools: suggestions only; nothing is saved to a post until the user applies it.
+workspaceRouter.post("/:workspaceId/ai/captions", requireWorkspace("EDITOR"), aiLimiter, validateBody(captionsSchema), ai.captions);
+workspaceRouter.post("/:workspaceId/ai/hashtags", requireWorkspace("EDITOR"), aiLimiter, validateBody(hashtagsSchema), ai.hashtags);
+workspaceRouter.post("/:workspaceId/ai/rewrite", requireWorkspace("EDITOR"), aiLimiter, validateBody(rewriteSchema), ai.rewrite);
+workspaceRouter.post("/:workspaceId/ai/requests/:requestId/feedback", requireWorkspace("EDITOR"), validateBody(feedbackSchema), ai.feedback);
+workspaceRouter.get("/:workspaceId/ai/usage", requireWorkspace("VIEWER"), ai.usage);
+workspaceRouter.get("/:workspaceId/brand-voice", requireWorkspace("VIEWER"), ai.getVoice);
+workspaceRouter.put("/:workspaceId/brand-voice", requireWorkspace("ADMIN"), validateBody(brandVoiceSchema), ai.putVoice);
 
 // /api/v1/integrations: called by the platforms, not by our frontend, so no requireAuth.
 export const integrationRouter = Router();

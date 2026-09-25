@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { AiAssistant } from "@/components/ai/AiAssistant";
 import { PageLoading } from "@/components/auth/RequireAuth";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
@@ -45,6 +46,7 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
   const initialWhen = initialPost?.scheduledAt ? toDateTimeLocal(new Date(initialPost.scheduledAt)) : "";
   const [when, setWhen] = useState(initialWhen);
   const [submitting, setSubmitting] = useState(false);
+  const [aiAssisted, setAiAssisted] = useState(initialPost?.aiAssisted ?? false);
   const now = useNow();
   const [serverErrors, setServerErrors] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -134,6 +136,7 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
       caption,
       mediaIds: media.map((m) => m.id),
       targets: selected.map((id) => ({ socialAccountId: id, captionOverride: overrides[id] })),
+      aiAssisted,
     };
     try {
       const post = editing
@@ -284,6 +287,13 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
               className="mt-2 w-full rounded-xl border border-neutral-300 bg-transparent p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700"
             />
             <CaptionCounters text={caption} />
+            <AiAssistant
+              workspaceId={workspaceId}
+              caption={caption}
+              onCaptionChange={setCaption}
+              mediaIds={media.map((m) => m.id)}
+              onApplied={() => setAiAssisted(true)}
+            />
           </section>
         </div>
 

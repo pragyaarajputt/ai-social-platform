@@ -103,6 +103,16 @@ export function deliveryUrl(asset: StoredAsset): string {
   return transformed(asset.secureUrl, "image", "c_limit,w_1440,q_auto", "jpg");
 }
 
+/**
+ * What the AI sees: the whole image (for videos, the first frame) as a JPEG of at most 1024 px.
+ * Big enough to understand the picture; smaller images cost fewer tokens.
+ */
+export function aiPreviewUrl(asset: StoredAsset): string {
+  return asset.type === "VIDEO"
+    ? transformed(asset.secureUrl, "video", "c_limit,w_1024,h_1024,so_0", "jpg")
+    : transformed(asset.secureUrl, "image", "c_limit,w_1024,h_1024,q_auto", "jpg");
+}
+
 /** A small square preview for the UI (for videos, the first frame). */
 export function thumbnailUrl(asset: StoredAsset): string {
   return asset.type === "VIDEO"

@@ -42,6 +42,8 @@ export interface Post {
   status: PostStatus;
   /** Null when the post was published right away. */
   scheduledAt: string | null;
+  /** An AI suggestion was applied while writing it. */
+  aiAssisted: boolean;
   createdAt: string;
   updatedAt: string;
   media: MediaItem[];
@@ -105,6 +107,7 @@ export interface CreatePostInput {
   targets: { socialAccountId: string; captionOverride?: string }[];
   /** ISO time; omit to publish now. */
   scheduledAt?: string;
+  aiAssisted?: boolean;
 }
 
 export async function createPost(workspaceId: string, input: CreatePostInput): Promise<Post> {

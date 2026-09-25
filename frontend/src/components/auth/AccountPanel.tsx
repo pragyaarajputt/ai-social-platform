@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
@@ -44,6 +45,13 @@ export function AccountPanel() {
           </div>
         ))}
       </dl>
+
+      <p className="mt-4 text-sm">
+        <Link href="/settings/brand-voice" className="font-medium underline">
+          Brand voice
+        </Link>{" "}
+        <span className="text-neutral-500">· how AI suggestions should sound</span>
+      </p>
 
       <div className="mt-8 flex flex-col gap-3">
         {error ? <Alert tone="error">{error}</Alert> : null}

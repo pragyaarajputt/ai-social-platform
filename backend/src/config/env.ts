@@ -51,6 +51,17 @@ const schema = z.object({
 
   // How often the worker looks for posts to publish.
   PUBLISH_POLL_INTERVAL_MS: z.coerce.number().int().min(500).default(5000),
+
+  // AI writing tools (Claude). Off unless ANTHROPIC_API_KEY is set.
+  ANTHROPIC_API_KEY: optional,
+  AI_MODEL: z.string().regex(/^claude-[w.-]+$/).default("claude-opus-5"),
+  /** Requests that reach Claude, per workspace per UTC day. */
+  AI_DAILY_REQUESTS_PER_WORKSPACE: z.coerce.number().int().min(0).default(50),
+  /** Estimated spend across all workspaces per UTC day, in US dollars. AI pauses when it's reached. */
+  AI_DAILY_SPEND_CAP_USD: z.coerce.number().min(0).default(5),
+  AI_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(10),
+  /** How many times the SDK retries rate-limited or failed calls. */
+  AI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
 });
 
 function parseTrustProxy(value: string | undefined): boolean | number | string {
@@ -106,4 +117,12 @@ export const env = {
         }
       : undefined,
   publishPollIntervalMs: e.PUBLISH_POLL_INTERVAL_MS,
+  ai: {
+    apiKey: e.ANTHROPIC_API_KEY,
+    model: e.AI_MODEL,
+    dailyRequestsPerWorkspace: e.AI_DAILY_REQUESTS_PER_WORKSPACE,
+    dailySpendCapMicros: Math.round(e.AI_DAILY_SPEND_CAP_USD * 1_000_000),
+    requestsPerMinute: e.AI_REQUESTS_PER_MINUTE,
+    maxRetries: e.AI_MAX_RETRIES,
+  },
 };

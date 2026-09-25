@@ -2,7 +2,7 @@
 
 Connect your social accounts (Instagram first; LinkedIn, Facebook, Threads, X, YouTube and TikTok planned), write a post once with AI help, and publish or schedule it to every platform from one dashboard.
 
-**Status:** Phase 6. Connect Instagram, upload photos and videos, publish to one or more Instagram accounts (single image, carousel, Reel) **now or on a schedule**, and plan posts on a calendar. AI writing tools come next.
+**Status:** Phase 7. Connect Instagram, upload photos and videos, publish to one or more Instagram accounts (single image, carousel, Reel) **now or on a schedule**, plan posts on a calendar, and write with **AI**: captions in five tones (from an idea and/or the photos), hashtag suggestions, rewrites, and a workspace brand voice.
 
 > `docs/PRD.md` describes the original social-network idea and is out of date. The product is now a social media management tool.
 
@@ -15,6 +15,7 @@ Connect your social accounts (Instagram first; LinkedIn, Facebook, Threads, X, Y
 - **Integrations:** Instagram API with Instagram Login (Graph API v26.0), plain `fetch`, tokens encrypted with AES-256-GCM
 - **Media:** Cloudinary (direct browser uploads; REST API with plain `fetch`)
 - **Jobs:** a Postgres-backed queue (`post_targets` rows claimed with `FOR UPDATE SKIP LOCKED`), no Redis
+- **AI:** Claude (Claude Opus 5 by default) through the official `@anthropic-ai/sdk`, with structured outputs
 
 ## Structure
 
@@ -22,15 +23,16 @@ Connect your social accounts (Instagram first; LinkedIn, Facebook, Threads, X, Y
 frontend/
   src/
     app/         pages: (auth)/ login, signup, forgot/reset password, verify email;
-                 (protected)/ account, accounts, calendar, posts (list, new, [id], [id]/edit); auth/callback
-    components/  ui/ primitives, auth/ forms and guards, accounts/, calendar/, posts/, workspace/
-    lib/         API client, session, workspaces, posts + uploads, dates, Instagram rules, form schemas
+                 (protected)/ account, accounts, calendar, posts (list, new, [id], [id]/edit), settings/brand-voice; auth/callback
+    components/  ui/ primitives, ai/ composer AI panel and brand voice, auth/ forms and guards, accounts/, calendar/, posts/, workspace/
+    lib/         API client, session, workspaces, posts + uploads, AI, dates, Instagram rules, form schemas
 backend/
   prisma/
     schema.prisma  database schema
     migrations/    SQL migrations (committed)
   prisma.config.ts Prisma CLI config
   src/
+    ai/          Claude client, versioned prompts, pricing
     config/      environment, app config, Prisma client
     generated/   generated Prisma client (gitignored)
     integrations/ one adapter per social platform (instagram/), shared interface in types.ts
@@ -174,11 +176,42 @@ Pass `scheduledAt` (ISO 8601 with offset) when creating a post, or pick **Schedu
 
 `GET /workspaces/:id/posts?from=&to=&status=` filters by date (a post's scheduled time, or creation time if published right away) and status. It feeds the calendar and the posts list tabs.
 
+## AI writing tools
+
+In the composer, under the caption. Every result is a **suggestion**: nothing changes until the user clicks *Use this*, *Apply* or a hashtag, and an applied change can be undone.
+
+| Feature | Endpoint (EDITOR+) | What it does |
+| --- | --- | --- |
+| Write captions | `POST /workspaces/:id/ai/captions` `{ idea?, mediaIds?, tone? }` | 3 different captions from an idea, the photos (Claude sees up to 4, as 1024 px previews), or both. Tones: professional, casual, funny, genz, motivational |
+| Suggest hashtags | `POST …/ai/hashtags` `{ caption, mediaIds? }` | Up to 15, labelled broad or niche; cleaned (no `#`, no spaces, no duplicates, none the caption already has) and never past Instagram's 30 |
+| Rewrite | `POST …/ai/rewrite` `{ text, action, tone? }` | improve, engaging, shorter, longer, grammar, tone, instagram. Shown as a before/after diff |
+| Feedback | `POST …/ai/requests/:requestId/feedback` `{ appliedIndex?, rating? }` | Which suggestion was used, and 👍/👎 |
+| Usage | `GET …/ai/usage` (VIEWER+) | Whether AI is configured, today's count and limit |
+| Brand voice | `GET` (VIEWER+) / `PUT` (ADMIN+) `…/brand-voice` | Tone, audience, always, avoid, sample post. Included in every prompt. Page: `/settings/brand-voice` |
+
+**Setup:** set `ANTHROPIC_API_KEY` in `backend/.env`. Without it, the AI panel says AI isn't set up.
+
+| Setting | Default | |
+| --- | --- | --- |
+| `AI_MODEL` | `claude-opus-5` | `claude-sonnet-5` or `claude-haiku-4-5` are cheaper |
+| `AI_DAILY_REQUESTS_PER_WORKSPACE` | 50 | Per UTC day; requests that reached Claude count, even failed ones. Enforced atomically (advisory lock), so parallel requests can't overshoot |
+| `AI_DAILY_SPEND_CAP_USD` | 5 | Estimated spend across all workspaces per UTC day; AI pauses when reached |
+| `AI_REQUESTS_PER_MINUTE` | 10 | Per user |
+
+**How requests are made** (`backend/src/ai/`):
+- **Output:** structured JSON checked against a Zod schema, then Instagram's rules.
+- **Thinking:** adaptive at `effort: "low"`.
+- **Caching:** the shared system prompt and the brand voice are cached.
+- **Prompt injection:** the user's text is passed inside tags as material, not instructions, and our tag names are stripped from it.
+- **Refusals:** server-side refusal fallback (`fallbacks: "default"`) is on for Claude Opus 5. If every model declines, the user sees "AI couldn't help with this one".
+- **Logging:** every request is stored in `ai_requests` with model, prompt version (`captions.v1`, …), tokens, **estimated cost**, latency, status, the suggestions, and feedback.
+- **Marking:** posts where a suggestion was applied are marked `aiAssisted` (internal only).
+
 ## Tests
 
 ```bash
-cd backend && npm test    # API integration tests (auth, workspaces, Instagram connect, publishing, scheduling; fake Instagram and Cloudinary APIs)
-cd frontend && npm test   # API client and session unit tests
+cd backend && npm test    # API integration tests (auth, workspaces, Instagram connect, publishing, scheduling, AI; fake Instagram, Cloudinary and Claude APIs, so nothing is billed)
+cd frontend && npm test   # API client, session, dates, Instagram rules, hashtag merge and rewrite diff unit tests
 ```
 
 Backend tests run against a separate `social_test` database, derived from `DATABASE_URL` in `.env` (or set `TEST_DATABASE_URL`). Migrations are applied automatically, and tables are emptied before each test.
