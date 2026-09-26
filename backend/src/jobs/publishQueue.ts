@@ -207,7 +207,9 @@ function logAttempt(postTargetId: string, attempt: number, outcome: string, star
 
 /** Summarises a post's targets into the post's status. */
 export function summarizePostStatus(statuses: TargetStatus[]): PostStatus {
-  if (statuses.length > 0 && statuses.every((s) => s === "SCHEDULED")) return "SCHEDULED";
+  // A scheduled post keeps its status when some of its accounts were cancelled (e.g. disconnected).
+  const notCancelled = statuses.filter((s) => s !== "CANCELLED");
+  if (notCancelled.length > 0 && notCancelled.every((s) => s === "SCHEDULED")) return "SCHEDULED";
   if (statuses.some((s) => s === "SCHEDULED" || s === "QUEUED" || s === "PUBLISHING" || s === "WAITING_FOR_MEDIA")) return "PUBLISHING";
   const live = statuses.filter((s) => s !== "CANCELLED");
   if (live.length === 0) return "CANCELLED";

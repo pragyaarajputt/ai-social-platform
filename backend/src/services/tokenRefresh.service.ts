@@ -87,13 +87,14 @@ export async function refreshDueTokens(now = new Date()): Promise<RefreshSummary
   return summary;
 }
 
-async function markNeedsReauth(account: { id: string; workspaceId: string }, reason: string) {
+/** The account can't be used until someone reconnects it. The UI and pre-flight warnings pick this up. */
+export async function markNeedsReauth(account: { id: string; workspaceId: string }, reason: string, action = "social_account.token_refresh_failed") {
   await prisma.$transaction(async (tx) => {
     await tx.socialAccount.update({ where: { id: account.id }, data: { status: "NEEDS_REAUTH" } });
     await tx.oAuthToken.update({ where: { socialAccountId: account.id }, data: { lastError: reason.slice(0, 500) } });
     await audit(
       {
-        action: "social_account.token_refresh_failed",
+        action,
         workspaceId: account.workspaceId,
         targetType: "social_account",
         targetId: account.id,

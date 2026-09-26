@@ -6,8 +6,12 @@ export function connectResultMessage(
   const connected = params.get("connected");
   if (connected) {
     const count = Number(params.get("count") ?? 1);
-    if (connected === "facebook") return { tone: "success", text: count === 1 ? "Facebook Page connected." : `${count} Facebook Pages connected.` };
-    return { tone: "success", text: `${platformName(connected)} account connected.` };
+    const elsewhere = Number(params.get("elsewhere") ?? 0);
+    const skipped = elsewhere
+      ? ` ${elsewhere} more ${elsewhere === 1 ? "is" : "are"} already connected to another workspace; disconnect ${elsewhere === 1 ? "it" : "them"} there to connect ${elsewhere === 1 ? "it" : "them"} here.`
+      : "";
+    if (connected === "facebook") return { tone: "success", text: `${count === 1 ? "Facebook Page connected." : `${count} Facebook Pages connected.`}${skipped}` };
+    return { tone: "success", text: `${platformName(connected)} account connected.${skipped}` };
   }
 
   const error = params.get("error");
@@ -25,6 +29,11 @@ export function connectResultMessage(
           name === "Instagram"
             ? "Only Instagram Business or Creator accounts can be connected. In the Instagram app, go to Settings → Account type and tools → Switch to professional account, then try again."
             : `This type of ${name} account can't be connected.`,
+      };
+    case "connected_elsewhere":
+      return {
+        tone: "error",
+        text: `This ${name} account is already connected to another workspace. An account can be connected to one workspace at a time: disconnect it there first.`,
       };
     case "no_accounts":
       return {

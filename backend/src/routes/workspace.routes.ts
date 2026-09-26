@@ -17,6 +17,7 @@ workspaceRouter.use(requireAuth);
 workspaceRouter.get("/", ws.listWorkspaces);
 workspaceRouter.get("/:workspaceId/social-accounts", requireWorkspace("VIEWER"), ws.listAccounts);
 workspaceRouter.post("/:workspaceId/social-accounts/:platform/connect", requireWorkspace("ADMIN"), ws.connectAccount);
+workspaceRouter.get("/:workspaceId/social-accounts/:accountId/disconnect-impact", requireWorkspace("ADMIN"), ws.disconnectImpact);
 workspaceRouter.delete("/:workspaceId/social-accounts/:accountId", requireWorkspace("ADMIN"), ws.disconnectAccount);
 
 workspaceRouter.post("/:workspaceId/media/upload-signature", requireWorkspace("EDITOR"), content.uploadSignature);

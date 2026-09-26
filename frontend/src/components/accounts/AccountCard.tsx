@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { Button } from "@/components/ui/Button";
+import { formatDateTime, formatRelative, useNow } from "@/lib/dates";
 import { platformName } from "@/lib/platforms";
 import type { SocialAccount } from "@/lib/workspaces";
 
@@ -21,15 +22,28 @@ export function AccountCard({
   reconnecting,
   onReconnect,
   onDisconnect,
+  loadDisconnectImpact,
 }: {
   account: SocialAccount;
   canManage: boolean;
   reconnecting: boolean;
   onReconnect: () => void;
-  onDisconnect: () => Promise<void>;
+  onDisconnect: (scheduledPosts: "cancel" | "keep") => Promise<void>;
+  /** Scheduled posts that use this account, shown in the disconnect confirmation. */
+  loadDisconnectImpact: () => Promise<{ scheduledPosts: number; nextScheduledAt: string | null }>;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [impact, setImpact] = useState<{ scheduledPosts: number; nextScheduledAt: string | null } | "loading" | "unknown">("loading");
+  const [keepScheduled, setKeepScheduled] = useState(false);
+  const now = useNow(60_000);
+
+  function startConfirming() {
+    setConfirming(true);
+    setKeepScheduled(false);
+    setImpact("loading");
+    loadDisconnectImpact().then(setImpact, () => setImpact("unknown"));
+  }
   const status = statusLabel[account.status];
   // Facebook Pages are known by their name; Instagram accounts by their @username.
   const handle = account.platform === "FACEBOOK" ? (account.name ?? account.username ?? account.externalId) : account.username ? `@${account.username}` : (account.name ?? account.externalId);
@@ -71,6 +85,9 @@ export function AccountCard({
               ? `Access was removed on ${platformName(account.platform)}. Reconnect to publish again.`
               : null}
       </p>
+      {account.status === "ACTIVE" && account.lastCheckedAt ? (
+        <p className="mt-1 text-xs text-neutral-500">Connection checked {formatRelative(new Date(account.lastCheckedAt), new Date(now))}.</p>
+      ) : null}
       {analyticsOff ? (
         <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">Analytics are off: reconnect and allow access to insights.</p>
       ) : null}
@@ -90,6 +107,27 @@ export function AccountCard({
                 Disconnect <strong>{handle}</strong>? This workspace won&apos;t be able to publish to it until it&apos;s connected
                 again.
               </p>
+              {impact === "loading" ? (
+                <p className="text-neutral-500">Checking scheduled posts…</p>
+              ) : impact === "unknown" ? (
+                <p className="text-neutral-500">Couldn&apos;t check scheduled posts. Scheduled posts using this account will be cancelled for it.</p>
+              ) : impact.scheduledPosts > 0 ? (
+                <div className="flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                  <p>
+                    {keepScheduled ? "Keeping" : "This cancels"}{" "}
+                    <strong>
+                      {impact.scheduledPosts} scheduled post{impact.scheduledPosts === 1 ? "" : "s"}
+                    </strong>{" "}
+                    for {handle}
+                    {impact.nextScheduledAt ? ` (next: ${formatDateTime(new Date(impact.nextScheduledAt))})` : ""}. Other accounts in those posts still
+                    publish.
+                  </p>
+                  <label className="flex items-start gap-2">
+                    <input type="checkbox" className="mt-0.5" checked={keepScheduled} onChange={(e) => setKeepScheduled(e.target.checked)} />
+                    Keep them instead. They&apos;ll publish if you reconnect before their time; otherwise they fail.
+                  </label>
+                </div>
+              ) : null}
               <div className="flex gap-2">
                 <Button variant="secondary" disabled={busy} onClick={() => setConfirming(false)}>
                   Cancel
@@ -97,10 +135,11 @@ export function AccountCard({
                 <Button
                   variant="danger"
                   loading={busy}
+                  disabled={impact === "loading"}
                   onClick={async () => {
                     setBusy(true);
                     try {
-                      await onDisconnect();
+                      await onDisconnect(keepScheduled ? "keep" : "cancel");
                     } finally {
                       setBusy(false);
                       setConfirming(false);
@@ -113,7 +152,7 @@ export function AccountCard({
             </div>
           ) : (
             <div className="w-auto">
-              <Button variant="secondary" onClick={() => setConfirming(true)}>
+              <Button variant="secondary" onClick={startConfirming}>
                 Disconnect
               </Button>
             </div>

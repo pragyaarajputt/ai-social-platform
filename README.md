@@ -129,13 +129,29 @@ Everything belongs to a **workspace**, not a user. Each sign-up gets a personal 
 | --- | --- | --- |
 | `GET /api/v1/workspaces` | bearer | My workspaces |
 | `GET /api/v1/workspaces/:id/social-accounts` | bearer, VIEWER+ | Connected accounts (never includes tokens) and which platforms are configured |
-| `POST /api/v1/workspaces/:id/social-accounts/instagram/connect` | bearer, ADMIN+ | Returns the Instagram consent URL |
-| `DELETE /api/v1/workspaces/:id/social-accounts/:accountId` | bearer, ADMIN+ | Disconnect: deletes the token |
-| `GET /api/v1/integrations/instagram/callback` | — | Instagram redirects here; we redirect to `/accounts?connected=…` or `?error=…` |
+| `POST /api/v1/workspaces/:id/social-accounts/:platform/connect` | bearer, ADMIN+ | Returns the platform's consent URL (`instagram`, `facebook`) |
+| `GET /api/v1/workspaces/:id/social-accounts/:accountId/disconnect-impact` | bearer, ADMIN+ | Scheduled posts that use the account, and the next one's time |
+| `DELETE /api/v1/workspaces/:id/social-accounts/:accountId` | bearer, ADMIN+ | Disconnect: deletes the tokens. Body `{ scheduledPosts: "cancel" | "keep" }` (default `cancel`: removes this account from its scheduled posts; other accounts in them still publish) |
+| `GET /api/v1/integrations/:platform/callback` | — | The platform redirects here; we redirect to `/accounts?connected=…&count=…` or `?error=…` |
 | `POST /api/v1/integrations/instagram/deauthorize` | Meta `signed_request` | User removed our app on Instagram |
 | `POST /api/v1/integrations/instagram/data-deletion` | Meta `signed_request` | User asked Meta to delete their data |
 
-**Tokens** are encrypted with AES-256-GCM (`TOKEN_ENCRYPTION_KEY`) and never sent to the browser. **The worker** (`npm run worker`) refreshes Instagram tokens every hour once they are 24 hours old and expire within 10 days; an account whose token can't be refreshed is marked `NEEDS_REAUTH` and shown as "Reconnect needed". Running several workers is safe: a Postgres advisory lock lets only one do each run.
+**Tokens** are encrypted with AES-256-GCM and never sent to the browser. **The worker** (`npm run worker`) refreshes Instagram tokens every hour once they are 24 hours old and expire within 10 days; an account whose token can't be refreshed is marked `NEEDS_REAUTH` and shown as "Reconnect needed". Running several workers is safe: a Postgres advisory lock lets only one do each run.
+
+**Connection rules and safeguards**
+
+- **One workspace per account:** a platform account can be active (`ACTIVE` or `NEEDS_REAUTH`) in one workspace at a time, enforced by a partial unique index (`social_accounts_one_active_workspace`). Connecting it elsewhere fails with `error=connected_elsewhere` (the other workspace isn't named); when some of the granted Facebook Pages are taken, the rest connect and the redirect says how many were skipped (`elsewhere=N`). Disconnected or revoked accounts can be connected anywhere.
+- **Daily health check:** the worker makes one cheap call per account per day with its stored token (Instagram profile, Facebook Page). A rejected token or a lost permission or Page role marks the account `NEEDS_REAUTH` (audit `social_account.health_check_failed`), so the pre-flight check warns authors of posts due in the next 24 hours. Outages and rate limits never mark an account broken. The same call keeps names and pictures current; accounts show "Connection checked … ago".
+- **PKCE:** adapters that set `usesPkce` get an S256 code challenge in the consent URL; the verifier stays on the server, encrypted, in the connect state and is deleted when used. Instagram and Facebook don't need it; it's ready for X, TikTok and LinkedIn.
+
+**Rotating the encryption key**
+
+1. Generate a key: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`.
+2. Replace `TOKEN_ENCRYPTION_KEY` with a list, new key first: `TOKEN_ENCRYPTION_KEYS=v2:<new key>,v1:<old key>`. Restart the API and the worker. New tokens use `v2` immediately; old ones stay readable.
+3. The worker re-encrypts old tokens in batches each hour (never overwriting a token refreshed in the meantime). Check progress with `npm run tokens:key-status`.
+4. When it shows nothing left on `v1`, remove `v1` from the list and restart.
+
+The server refuses to start if the list is malformed, a key isn't 32 bytes, or a version appears twice.
 
 ### Setting up Instagram
 
@@ -263,7 +279,7 @@ Post responses include each target's `metrics`.
 ## Tests
 
 ```bash
-cd backend && npm test    # API integration tests (auth, workspaces, Instagram and Facebook connect and publishing, scheduling, AI, analytics; fake Instagram, Facebook, Cloudinary and Claude APIs, so nothing is billed)
+cd backend && npm test    # API integration tests (auth, workspaces, Instagram and Facebook connect and publishing, connection safeguards, scheduling, AI, analytics; fake Instagram, Facebook, Cloudinary and Claude APIs, so nothing is billed)
 cd frontend && npm test   # API client, session, dates, Instagram rules, platform rules, hashtag merge, rewrite diff, analytics maths, time zones and CSV unit tests
 ```
 
@@ -277,6 +293,7 @@ Backend tests run against a separate `social_test` database, derived from `DATAB
 | backend | `npm run build` | Compile TypeScript to `dist/` |
 | backend | `npm start` | Run the compiled build |
 | backend | `npm run worker` | Run background jobs: publishing (including scheduled posts), token refresh, scheduled-post warnings, analytics collection. **Posts only go out, and numbers only update, while this runs** |
+| backend | `npm run tokens:key-status` | How many stored secrets use each encryption key version |
 | backend | `npm run typecheck` | Type-check without emitting |
 | backend | `npm test` | Run API tests |
 | backend | `npm run db:migrate` | Create and apply migrations in development |

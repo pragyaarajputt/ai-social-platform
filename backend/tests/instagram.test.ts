@@ -320,7 +320,8 @@ describe("connecting Instagram", () => {
     const res = await request(app)
       .delete(`/api/v1/workspaces/${user.workspaceId}/social-accounts/${account.id}`)
       .set(auth(user.token));
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ cancelledTargets: 0 });
     expect(await prisma.oAuthToken.count()).toBe(0);
     expect((await prisma.socialAccount.findUniqueOrThrow({ where: { id: account.id } })).status).toBe("DISCONNECTED");
 
@@ -334,7 +335,8 @@ describe("token refresh", () => {
     const user = await signUp();
     const account = await connectInstagram(user);
     await prisma.oAuthToken.update({ where: { socialAccountId: account.id }, data: tokenFields });
-    return account;
+    // Some tests connect several; an Instagram account can be active in one workspace only, so each gets its own ID.
+    return prisma.socialAccount.update({ where: { id: account.id }, data: { externalId: `ig-${account.id}` } });
   }
   const days = (n: number) => new Date(Date.now() + n * 86_400_000);
 

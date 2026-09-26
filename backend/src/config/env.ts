@@ -1,5 +1,6 @@
 import { config } from "dotenv";
 import { z } from "zod";
+import { parseKeyRing } from "../utils/keyRing.js";
 
 // Tests load .env.test through vitest.config.ts; never let the dev .env leak into them.
 if (process.env.NODE_ENV !== "test") config({ quiet: true });
@@ -32,10 +33,10 @@ const schema = z.object({
   GOOGLE_CLIENT_SECRET: optional,
   GOOGLE_REDIRECT_URI: optional,
 
-  // 32 random bytes, base64. Encrypts social account tokens at rest (utils/tokenCrypto.ts).
-  TOKEN_ENCRYPTION_KEY: z
-    .string()
-    .refine((v) => Buffer.from(v, "base64").length === 32, "must be 32 bytes, base64-encoded"),
+  // Encrypt social account tokens at rest (utils/tokenCrypto.ts). Either one key (32 random bytes,
+  // base64) or, to rotate keys, a list "v2:<key>,v1:<old key>" whose first key encrypts new data.
+  TOKEN_ENCRYPTION_KEY: optional,
+  TOKEN_ENCRYPTION_KEYS: optional,
 
   // Instagram API with Instagram Login. Connecting Instagram is off unless all three are set.
   INSTAGRAM_APP_ID: optional,
@@ -86,6 +87,13 @@ if (!parsed.success) {
 
 const e = parsed.data;
 
+let tokenKeys;
+try {
+  tokenKeys = parseKeyRing(e.TOKEN_ENCRYPTION_KEYS, e.TOKEN_ENCRYPTION_KEY);
+} catch (err) {
+  throw new Error(`Invalid environment configuration:\n  ${(err as Error).message}`);
+}
+
 export const env = {
   nodeEnv: e.NODE_ENV,
   isProduction: e.NODE_ENV === "production",
@@ -105,7 +113,7 @@ export const env = {
     e.GOOGLE_CLIENT_ID && e.GOOGLE_CLIENT_SECRET && e.GOOGLE_REDIRECT_URI
       ? { clientId: e.GOOGLE_CLIENT_ID, clientSecret: e.GOOGLE_CLIENT_SECRET, redirectUri: e.GOOGLE_REDIRECT_URI }
       : undefined,
-  tokenEncryptionKey: Buffer.from(e.TOKEN_ENCRYPTION_KEY, "base64"),
+  tokenKeys,
   instagram:
     e.INSTAGRAM_APP_ID && e.INSTAGRAM_APP_SECRET && e.INSTAGRAM_REDIRECT_URI
       ? {

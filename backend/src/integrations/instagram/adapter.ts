@@ -52,6 +52,14 @@ export const instagramAdapter: PlatformAdapter = {
   // A long-lived token can only be refreshed once it is at least 24 hours old.
   refreshableAfter: (lastRefreshedAt) => new Date(lastRefreshedAt.getTime() + 24 * 3_600_000),
 
+  async checkAccount(ctx) {
+    const p = await ig.getProfile(app(), ctx.accessToken);
+    if (p.user_id !== ctx.accountExternalId) {
+      throw new PlatformApiError("INSTAGRAM", "INVALID_TOKEN", "The stored access belongs to a different Instagram account");
+    }
+    return { username: p.username, name: p.name, avatarUrl: p.profile_picture_url };
+  },
+
   chooseFormat: publisher.chooseFormat,
   validatePost: publisher.validatePost,
   publish: (ctx) => publisher.publish(app(), ctx),

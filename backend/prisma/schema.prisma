@@ -250,6 +250,9 @@ model SocialAccount {
   audience    AccountAudience?
 
   @@unique([workspaceId, platform, externalId])
+  // Also: a platform account can be ACTIVE or NEEDS_REAUTH in only one workspace at a time. Prisma
+  // can't express partial unique indexes, so it's created in SQL (migration connection_hardening:
+  // social_accounts_one_active_workspace).
   @@index([platform, externalId])
   @@index([platform, appScopedId])
   @@map("social_accounts")
@@ -277,14 +280,16 @@ model OAuthToken {
 
 /// Short-lived `state` for the connect flow, so a callback can only complete a flow we started.
 model OAuthConnectState {
-  id          String         @id @default(uuid(7)) @db.Uuid
-  stateHash   String         @unique @map("state_hash")
-  userId      String         @map("user_id") @db.Uuid
-  workspaceId String         @map("workspace_id") @db.Uuid
-  platform    SocialPlatform
-  expiresAt   DateTime       @map("expires_at") @db.Timestamptz(3)
-  usedAt      DateTime?      @map("used_at") @db.Timestamptz(3)
-  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  id              String         @id @default(uuid(7)) @db.Uuid
+  stateHash       String         @unique @map("state_hash")
+  /// PKCE code_verifier for platforms that use it, encrypted like tokens. Single use, like the state.
+  codeVerifierEnc String?        @map("code_verifier_enc")
+  userId          String         @map("user_id") @db.Uuid
+  workspaceId     String         @map("workspace_id") @db.Uuid
+  platform        SocialPlatform
+  expiresAt       DateTime       @map("expires_at") @db.Timestamptz(3)
+  usedAt          DateTime?      @map("used_at") @db.Timestamptz(3)
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)

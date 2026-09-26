@@ -11,6 +11,7 @@ import { ApiError } from "@/lib/api";
 import {
   canManageAccounts,
   disconnectAccount,
+  getDisconnectImpact,
   listSocialAccounts,
   startConnect,
   type PlatformInfo,
@@ -74,10 +75,10 @@ export function AccountsPanel() {
     }
   }
 
-  async function disconnect(account: SocialAccount) {
+  async function disconnect(account: SocialAccount, scheduledPosts: "cancel" | "keep") {
     setActionError(null);
     try {
-      await disconnectAccount(workspaceId!, account.id);
+      await disconnectAccount(workspaceId!, account.id, scheduledPosts);
       setReloadKey((k) => k + 1);
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : "Couldn't disconnect the account. Try again.");
@@ -108,7 +109,8 @@ export function AccountsPanel() {
                   canManage={canManage}
                   reconnecting={connecting === account.platform}
                   onReconnect={() => connect(account.platform)}
-                  onDisconnect={() => disconnect(account)}
+                  onDisconnect={(scheduledPosts) => disconnect(account, scheduledPosts)}
+                  loadDisconnectImpact={() => getDisconnectImpact(workspaceId!, account.id)}
                 />
               </li>
             ))}

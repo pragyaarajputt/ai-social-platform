@@ -48,6 +48,11 @@ export const facebookAdapter: PlatformAdapter = {
   // Page tokens don't expire, so there's nothing to refresh. The worker never asks (no expiry date).
   refreshToken: async (token) => token,
 
+  async checkAccount(ctx) {
+    const page = await fb.getPage(app(), ctx.accountExternalId, ctx.accessToken);
+    return { username: page.username ?? page.name, name: page.name, avatarUrl: page.pictureUrl };
+  },
+
   chooseFormat: publisher.chooseFormat,
   validatePost: publisher.validatePost,
   publish: (ctx) => publisher.publish(app(), ctx),

@@ -99,7 +99,9 @@ describe("scheduling a post", () => {
     await arrive(late.postId, 23 * 3_600_000);
     expect(await runPublishCycle()).toEqual(["published"]);
 
-    // A second user, so the account has the ID the fake Instagram answers for.
+    // A second user, so the account has the ID the fake Instagram answers for. An account can be
+    // active in one workspace only, so the first user's connection is ended first.
+    await prisma.socialAccount.updateMany({ where: { workspaceId: u.workspaceId }, data: { status: "DISCONNECTED" } });
     const u2 = await signUp();
     const missed = await scheduledPost(u2, hours(2));
     await arrive(missed.postId, 25 * 3_600_000);

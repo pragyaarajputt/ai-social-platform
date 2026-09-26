@@ -133,12 +133,14 @@ export interface PlatformAdapter {
   capabilities: PlatformCapabilities;
   /** False when the platform's app credentials aren't configured on this server. */
   isConfigured(): boolean;
-  getAuthorizationUrl(state: string): string;
+  /** The platform requires PKCE: the connect flow then passes a code challenge and later the verifier. */
+  usesPkce?: boolean;
+  getAuthorizationUrl(state: string, pkce?: { codeChallenge: string }): string;
   /**
    * Finishes the OAuth flow: exchanges the callback code for the longest-lived tokens the platform
    * offers and returns every account the user granted (one for Instagram; each chosen Page for Facebook).
    */
-  connect(code: string): Promise<ConnectedAccountGrant[]>;
+  connect(code: string, pkce?: { codeVerifier: string }): Promise<ConnectedAccountGrant[]>;
   refreshToken(token: TokenSet): Promise<TokenSet>;
   /** Earliest moment a token may be refreshed, if the platform restricts it. */
   refreshableAfter?(lastRefreshedAt: Date): Date;
@@ -152,6 +154,11 @@ export interface PlatformAdapter {
    * PlatformApiError on failure (see isRetryable).
    */
   publish(ctx: PublishContext): Promise<PublishResult>;
+  /**
+   * A cheap call proving the stored token still works for this account, returning its current
+   * profile (names and pictures change). Throws PlatformApiError, e.g. INVALID_TOKEN, when it doesn't.
+   */
+  checkAccount?(ctx: InsightsContext): Promise<Partial<Omit<ConnectedProfile, "externalId" | "appScopedId" | "accountType">>>;
   /** Reading post and account numbers. Absent for platforms without analytics yet. */
   insights?: InsightsProvider;
 }

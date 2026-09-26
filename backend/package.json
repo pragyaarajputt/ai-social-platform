@@ -11,6 +11,7 @@
     "worker": "tsx src/worker.ts",
     "worker:start": "node dist/worker.js",
     "typecheck": "tsc --noEmit",
+    "tokens:key-status": "tsx src/scripts/tokenKeyStatus.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "prisma generate",

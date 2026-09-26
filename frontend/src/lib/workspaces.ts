@@ -23,6 +23,8 @@ export interface SocialAccount {
   status: "ACTIVE" | "NEEDS_REAUTH" | "REVOKED" | "DISCONNECTED";
   /** Instagram allowed reading insights; false until reconnected with that permission. */
   insightsAllowed: boolean;
+  /** When the daily check last confirmed the connection works. */
+  lastCheckedAt: string | null;
   createdAt: string;
   tokenExpiresAt: string | null;
   tokenRefreshedAt: string | null;
@@ -55,6 +57,12 @@ export async function startConnect(workspaceId: string, platform: SocialPlatform
   return res.authorizationUrl;
 }
 
-export function disconnectAccount(workspaceId: string, accountId: string): Promise<void> {
-  return api(`/workspaces/${workspaceId}/social-accounts/${accountId}`, { method: "DELETE" });
+/** Scheduled posts that use the account, shown before disconnecting it. */
+export function getDisconnectImpact(workspaceId: string, accountId: string) {
+  return api<{ scheduledPosts: number; nextScheduledAt: string | null }>(`/workspaces/${workspaceId}/social-accounts/${accountId}/disconnect-impact`);
+}
+
+/** "cancel" removes this account from its scheduled posts; "keep" leaves them to publish if it's reconnected in time. */
+export function disconnectAccount(workspaceId: string, accountId: string, scheduledPosts: "cancel" | "keep" = "cancel") {
+  return api<{ cancelledTargets: number }>(`/workspaces/${workspaceId}/social-accounts/${accountId}`, { method: "DELETE", body: { scheduledPosts } });
 }

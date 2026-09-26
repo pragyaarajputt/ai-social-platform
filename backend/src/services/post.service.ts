@@ -256,6 +256,8 @@ async function findPostForChange(workspaceId: string, postId: string) {
 /** Edits a scheduled post. `scheduledAt: null` publishes it now. */
 export async function updatePost(workspaceId: string, postId: string, actorId: string, input: UpdatePostInput) {
   const current = await findPostForChange(workspaceId, postId);
+  // Accounts cancelled out of the post (e.g. disconnected) count as removed.
+  current.targets = current.targets.filter((t) => t.status !== "CANCELLED");
   // Checked first (and again under the lock below), so a post the worker has picked up gets a
   // clear 409 rather than a validation error about its time.
   if (current.status !== "SCHEDULED" || current.targets.some((t) => t.status !== "SCHEDULED")) {
@@ -277,7 +279,7 @@ export async function updatePost(workspaceId: string, postId: string, actorId: s
   );
 
   await prisma.$transaction(async (tx) => {
-    await lockUntouchedTargets(tx, postId, ["SCHEDULED"], "This post has started publishing and can't be changed.");
+    await lockUntouchedTargets(tx, postId, ["SCHEDULED", "CANCELLED"], "This post has started publishing and can't be changed.");
     // Nothing has been sent anywhere yet, so the targets and media list can simply be replaced.
     await tx.postTarget.deleteMany({ where: { postId } });
     await tx.postMedia.deleteMany({ where: { postId } });
@@ -309,9 +311,10 @@ export async function updatePost(workspaceId: string, postId: string, actorId: s
 }
 
 export async function cancelPost(workspaceId: string, postId: string, actorId: string) {
-  await findPostForChange(workspaceId, postId);
+  const post = await findPostForChange(workspaceId, postId);
+  if (post.status !== "SCHEDULED") throw new AppError(409, "POST_LOCKED", "Only scheduled posts that haven't started publishing can be cancelled.");
   await prisma.$transaction(async (tx) => {
-    await lockUntouchedTargets(tx, postId, ["SCHEDULED"], "Only scheduled posts that haven't started publishing can be cancelled.");
+    await lockUntouchedTargets(tx, postId, ["SCHEDULED", "CANCELLED"], "Only scheduled posts that haven't started publishing can be cancelled.");
     await tx.postTarget.updateMany({ where: { postId }, data: { status: "CANCELLED", nextAttemptAt: null } });
     await tx.post.update({ where: { id: postId }, data: { status: "CANCELLED" } });
     await audit({ action: "post.cancelled", workspaceId, actorId, targetType: "post", targetId: postId }, tx);

@@ -41,9 +41,11 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
   const [caption, setCaption] = useState(initialPost?.caption ?? "");
   const [media, setMedia] = useState<MediaItem[]>(initialPost?.media ?? []);
   const [uploads, setUploads] = useState<Upload[]>([]);
-  const [selected, setSelected] = useState<string[]>(initialPost?.targets.map((t) => t.account.id) ?? []);
+  // Accounts cancelled out of a scheduled post (e.g. disconnected) aren't part of it any more.
+  const initialTargets = initialPost?.targets.filter((t) => t.status !== "CANCELLED");
+  const [selected, setSelected] = useState<string[]>(initialTargets?.map((t) => t.account.id) ?? []);
   const [overrides, setOverrides] = useState<Record<string, string | undefined>>(
-    Object.fromEntries(initialPost?.targets.filter((t) => t.caption !== null).map((t) => [t.account.id, t.caption!]) ?? []),
+    Object.fromEntries(initialTargets?.filter((t) => t.caption !== null).map((t) => [t.account.id, t.caption!]) ?? []),
   );
   const [mode, setMode] = useState<"now" | "schedule">(initialPost?.scheduledAt ? "schedule" : "now");
   const initialWhen = initialPost?.scheduledAt ? toDateTimeLocal(new Date(initialPost.scheduledAt)) : "";

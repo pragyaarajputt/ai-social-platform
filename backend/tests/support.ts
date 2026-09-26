@@ -48,6 +48,8 @@ interface Fake {
     /** Every insights-related call: "media:<id>", "account:<metric>:<since>", "followers", "online". */
     calls: string[];
   };
+  /** What /me returns for the connected Instagram account (the health check reads it). */
+  profile: { userId: string; username: string };
   claude: {
     /** Request bodies sent to the Claude API, with their beta header. */
     requests: { body: Record<string, any>; beta: string | null }[];
@@ -75,6 +77,7 @@ export function installFakes() {
     createFailures: [],
     cloudinary: new Map(),
     claude: { requests: [], replies: [] },
+    profile: { userId: IG_USER, username: "brand" },
     insights: {
       media: { views: 1200, reach: 800, likes: 90, comments: 12, shares: 7, saved: 15, total_interactions: 124, profile_visits: 20, follows: 3, ig_reels_avg_watch_time: 6400 },
       accountDay: () => ({ reach: 500, views: 900, accounts_engaged: 60, total_interactions: 80, likes: 50, comments: 10, shares: 5, saves: 15, profile_links_taps: 4 }),
@@ -138,6 +141,9 @@ export function installFakes() {
         return json(200, { id });
       }
       if (path === `${IG_USER}/media`) return json(200, { data: fake.media });
+      if (path === "me") {
+        return json(200, { id: "app-scoped-1", user_id: fake.profile.userId, username: fake.profile.username, account_type: "BUSINESS", profile_picture_url: "https://ig.example/p.jpg" });
+      }
 
       // Insights
       const ins = fake.insights;

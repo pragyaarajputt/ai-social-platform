@@ -17,6 +17,13 @@ describe("connectResultMessage()", () => {
     expect(msg("connected=facebook&count=3")?.text).toBe("3 Facebook Pages connected.");
   });
 
+  it("explains accounts already connected to another workspace", () => {
+    expect(msg("error=connected_elsewhere&platform=instagram")?.text).toContain("already connected to another workspace");
+    expect(msg("connected=facebook&count=2&elsewhere=1")?.text).toBe(
+      "2 Facebook Pages connected. 1 more is already connected to another workspace; disconnect it there to connect it here.",
+    );
+  });
+
   it("explains what to do when no Page could be connected", () => {
     expect(msg("error=no_accounts&platform=facebook")?.text).toContain("choose at least one Page");
   });

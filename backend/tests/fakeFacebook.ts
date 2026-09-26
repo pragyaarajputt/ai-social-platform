@@ -187,7 +187,9 @@ export function handleFacebook(url: URL, init?: RequestInit): Response | null {
       if (!fb.posts.some((p) => p.id === first)) return graphError("Unsupported get request. Object does not exist", 100);
       return json(200, { data: form.get("metric")!.split(",").map((name) => ({ name, period: "lifetime", values: [{ value: fb.insights.post[name] ?? 0 }] })) });
     }
-    if (first === FB_PAGE && !second) return json(200, { id: FB_PAGE, followers_count: fb.insights.followers });
+    if (first === FB_PAGE && !second) {
+      return json(200, { id: FB_PAGE, name: fb.pages[0]!.name, username: fb.pages[0]!.username, followers_count: fb.insights.followers, picture: { data: { url: "https://fb.example/page.jpg" } } });
+    }
     const post = fb.posts.find((p) => p.id === first);
     if (post && !second) {
       return json(200, {

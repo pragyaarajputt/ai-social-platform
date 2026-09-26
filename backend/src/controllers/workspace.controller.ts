@@ -1,10 +1,12 @@
 import type { RequestHandler } from "express";
+import { z } from "zod";
 import { env } from "../config/env.js";
 import { listPlatforms, platformFromSlug } from "../integrations/registry.js";
 import {
   completeConnect,
   ConnectError,
   disconnectSocialAccount,
+  getDisconnectImpact,
   getDataDeletionStatus,
   handleDataDeletion,
   handleDeauthorize,
@@ -32,14 +34,30 @@ export const connectAccount: RequestHandler = async (req, res) => {
   res.json(await startConnect({ userId: req.user!.id, workspaceId: req.workspace!.id, platform }));
 };
 
-export const disconnectAccount: RequestHandler = async (req, res) => {
-  await disconnectSocialAccount({
-    workspaceId: req.workspace!.id,
-    accountId: String(req.params.accountId),
-    actorId: req.user!.id,
-  });
-  res.status(204).end();
+export const disconnectImpact: RequestHandler = async (req, res) => {
+  res.json(await getDisconnectImpact(req.workspace!.id, accountIdParam(req.params.accountId)));
 };
+
+export const disconnectAccount: RequestHandler = async (req, res) => {
+  const { scheduledPosts } = disconnectSchema.parse(req.body ?? {});
+  res.json(
+    await disconnectSocialAccount({
+      workspaceId: req.workspace!.id,
+      accountId: accountIdParam(req.params.accountId),
+      actorId: req.user!.id,
+      scheduledPosts,
+    }),
+  );
+};
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function accountIdParam(value: unknown): string {
+  if (typeof value !== "string" || !UUID.test(value)) throw new AppError(404, "ACCOUNT_NOT_FOUND", "Connected account not found");
+  return value;
+}
+
+/** Scheduled posts that use the account are cancelled for it unless the user chose to keep them. */
+const disconnectSchema = z.object({ scheduledPosts: z.enum(["cancel", "keep"]).default("cancel") });
 
 // ─── Platform callbacks (/integrations/:platform/...) ───────────────────────
 
@@ -51,8 +69,8 @@ export const oauthCallback: RequestHandler = async (req, res) => {
   const q = (v: unknown) => (typeof v === "string" && v ? v : undefined);
 
   try {
-    const { accounts } = await completeConnect({ platform, code: q(req.query.code), state: q(req.query.state), error: q(req.query.error) });
-    back(`connected=${encodeURIComponent(slug)}&count=${accounts.length}`);
+    const { accounts, skippedElsewhere } = await completeConnect({ platform, code: q(req.query.code), state: q(req.query.state), error: q(req.query.error) });
+    back(`connected=${encodeURIComponent(slug)}&count=${accounts.length}${skippedElsewhere ? `&elsewhere=${skippedElsewhere}` : ""}`);
   } catch (err) {
     if (err instanceof ConnectError) {
       if (err.reason === "platform_error") console.error(`[${platform}] connect failed:`, err.message);

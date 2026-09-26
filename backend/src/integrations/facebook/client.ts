@@ -120,6 +120,17 @@ export async function listPages(app: FacebookAppConfig, userToken: string): Prom
   return pages;
 }
 
+/** The Page as its own token sees it. Fails if the token no longer works for this Page. */
+export async function getPage(app: FacebookAppConfig, pageId: string, pageToken: string) {
+  const body = firstRecord(await graphGet(app, pageId, pageToken, { fields: "id,name,username,picture{url}" }));
+  if (String(body.id) !== pageId) throw unexpected("Page lookup returned another ID");
+  return {
+    name: optionalString(body.name),
+    username: optionalString(body.username),
+    pictureUrl: optionalString((body.picture as { data?: { url?: unknown } } | undefined)?.data?.url),
+  };
+}
+
 // ─── Publishing ─────────────────────────────────────────────────────────────
 
 export async function createFeedPost(app: FacebookAppConfig, pageId: string, token: string, params: Record<string, string>): Promise<string> {
