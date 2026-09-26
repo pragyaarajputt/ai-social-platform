@@ -7,6 +7,7 @@ import { PageLoading } from "@/components/auth/RequireAuth";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
+import { engagementRate, formatCount, formatPercent } from "@/lib/analytics";
 import { ApiError } from "@/lib/api";
 import { formatDateTime, formatRelative, localTimeZone } from "@/lib/dates";
 import { formatLabel } from "@/lib/instagramRules";
@@ -195,6 +196,36 @@ export function PostDetail({ postId }: { postId: string }) {
   );
 }
 
+function TargetMetricsView({ target: t }: { target: PostTarget }) {
+  const m = t.metrics;
+  if (!m || m.status === "PENDING") return <p className="mt-2 text-xs text-neutral-500">Numbers appear about an hour after publishing.</p>;
+  if (m.status === "UNAVAILABLE") return <p className="mt-2 text-xs text-neutral-500">Numbers aren&apos;t available: the post may have been removed from Instagram.</p>;
+  const rate = engagementRate(m.totalInteractions, m.reach);
+  const items: [string, string][] = [
+    ["Views", formatCount(m.views)],
+    ["Reach", formatCount(m.reach)],
+    ["Likes", formatCount(m.likes)],
+    ["Comments", formatCount(m.comments)],
+    ["Shares", formatCount(m.shares)],
+    ["Saves", formatCount(m.saves)],
+    ["Engagement", formatPercent(rate)],
+    ...(m.avgWatchTimeMs != null ? ([["Avg. watch", `${(m.avgWatchTimeMs / 1000).toFixed(1)} s`]] as [string, string][]) : []),
+  ];
+  return (
+    <div className="mt-3">
+      <dl className="grid grid-cols-4 gap-2 text-center sm:grid-cols-8">
+        {items.map(([label, value]) => (
+          <div key={label} className="rounded-lg bg-neutral-50 p-2 dark:bg-neutral-900">
+            <dd className="text-sm font-semibold tabular-nums">{value}</dd>
+            <dt className="text-[11px] text-neutral-500">{label}</dt>
+          </div>
+        ))}
+      </dl>
+      {m.fetchedAt ? <p className="mt-1 text-xs text-neutral-500">Updated {new Date(m.fetchedAt).toLocaleString()} · Instagram can be up to 48 h behind</p> : null}
+    </div>
+  );
+}
+
 function TargetRow({ target: t, retrying, onRetry }: { target: PostTarget; retrying: boolean; onRetry: () => void }) {
   return (
     <li className="rounded-2xl border border-neutral-200 p-4 dark:border-neutral-800">
@@ -216,6 +247,7 @@ function TargetRow({ target: t, retrying, onRetry }: { target: PostTarget; retry
           )}
         </p>
       ) : null}
+      {t.status === "PUBLISHED" ? <TargetMetricsView target={t} /> : null}
       {t.status === "QUEUED" && t.attempts > 0 ? (
         <p className="mt-3 text-sm text-neutral-500">
           Attempt {t.attempts} didn&apos;t work ({t.lastError}). Trying again

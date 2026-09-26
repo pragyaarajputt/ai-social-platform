@@ -1,5 +1,6 @@
 import { prisma } from "./config/database.js";
 import { env } from "./config/env.js";
+import { runAnalyticsCollection } from "./jobs/analytics.js";
 import { runPublishCycle } from "./jobs/publishQueue.js";
 import { runPreflightChecks } from "./services/preflight.service.js";
 import { purgeExpiredConnectStates, refreshDueTokens } from "./services/tokenRefresh.service.js";
@@ -7,7 +8,8 @@ import { purgeExpiredConnectStates, refreshDueTokens } from "./services/tokenRef
 // Background jobs. Run with `npm run worker`, separately from the API. Safe to run several:
 // - publishing (including scheduled posts once due): every few seconds; rows are claimed with
 //   SKIP LOCKED, so no post is taken twice;
-// - maintenance (token refresh, scheduled-post warnings): hourly, guarded by a Postgres advisory lock.
+// - maintenance (token refresh, scheduled-post warnings, analytics collection): hourly, guarded by a
+//   Postgres advisory lock.
 
 const MAINTENANCE_INTERVAL_MS = 60 * 60_000;
 const MAINTENANCE_LOCK_ID = 7_310_001; // arbitrary constant: "token refresh"
@@ -29,9 +31,14 @@ async function runMaintenance() {
         const purged = await purgeExpiredConnectStates();
         // After refreshing, so accounts whose tokens were just renewed aren't flagged.
         const preflight = await runPreflightChecks();
+        // Last, and never allowed to break the rest of maintenance.
+        const analytics = await runAnalyticsCollection().catch((err: unknown) => {
+          console.error("[worker] analytics collection failed:", err);
+          return null;
+        });
         console.log(
           `[worker] token refresh: ${JSON.stringify(summary)}; expired connect states purged: ${purged}; ` +
-            `scheduled-post warnings: ${JSON.stringify(preflight)}`,
+            `scheduled-post warnings: ${JSON.stringify(preflight)}; analytics: ${JSON.stringify(analytics)}`,
         );
       },
       { maxWait: 5_000, timeout: 10 * 60_000 },

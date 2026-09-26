@@ -33,7 +33,24 @@ export interface PostTarget {
   lastErrorCode: string | null;
   lastError: string | null;
   risk: TargetRisk;
+  /** Numbers once published; null until the worker first collects them. */
+  metrics: TargetMetrics | null;
   account: Pick<SocialAccount, "id" | "platform" | "username" | "name" | "avatarUrl" | "status"> & { tokenExpiresAt: string | null };
+}
+
+export interface TargetMetrics {
+  status: "PENDING" | "OK" | "UNAVAILABLE";
+  views: number | null;
+  reach: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  saves: number | null;
+  totalInteractions: number | null;
+  profileVisits: number | null;
+  follows: number | null;
+  avgWatchTimeMs: number | null;
+  fetchedAt: string | null;
 }
 
 export interface Post {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AiAssistant } from "@/components/ai/AiAssistant";
+import { BestTimeHint } from "@/components/analytics/BestTimeHint";
 import { PageLoading } from "@/components/auth/RequireAuth";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
@@ -439,6 +440,7 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
                   {scheduledFor ? `${formatDateTime(scheduledFor)} (${formatRelative(scheduledFor, new Date(now))}) · ` : ""}
                   Times in {localTimeZone()}
                 </p>
+                <BestTimeHint workspaceId={workspaceId} accountId={selected.find((id) => ready.some((a) => a.id === id))} day={scheduledFor ? scheduledFor.getDay() : null} />
               </>
             ) : null}
           </section>

@@ -4,7 +4,8 @@ import { PlatformApiError } from "../types.js";
 // https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/business-login
 // URLs built here can contain access tokens: never log them.
 
-export const INSTAGRAM_SCOPES = ["instagram_business_basic", "instagram_business_content_publish"];
+export const INSIGHTS_SCOPE = "instagram_business_manage_insights";
+export const INSTAGRAM_SCOPES = ["instagram_business_basic", "instagram_business_content_publish", INSIGHTS_SCOPE];
 
 const AUTHORIZE_URL = "https://www.instagram.com/oauth/authorize";
 const SHORT_TOKEN_URL = "https://api.instagram.com/oauth/access_token";
@@ -119,7 +120,7 @@ async function graphPost(app: InstagramAppConfig, path: string, accessToken: str
   });
 }
 
-async function graphGet(app: InstagramAppConfig, path: string, accessToken: string, params: Record<string, string>) {
+export async function graphGet(app: InstagramAppConfig, path: string, accessToken: string, params: Record<string, string>) {
   const url = new URL(`${GRAPH_HOST}/${app.graphVersion}/${path}`);
   url.search = new URLSearchParams({ ...params, access_token: accessToken }).toString();
   return request(url.toString());

@@ -28,6 +28,7 @@ const postInclude = {
           token: { select: { expiresAt: true } },
         },
       },
+      metrics: true,
     },
   },
 } as const satisfies Prisma.PostInclude;
@@ -69,6 +70,20 @@ function toPublicPost(p: PostWithDetails) {
         lastErrorCode: t.lastErrorCode,
         lastError: t.lastError,
         risk: riskOf(t, t.socialAccount),
+        metrics: t.metrics && {
+          status: t.metrics.status,
+          views: t.metrics.views,
+          reach: t.metrics.reach,
+          likes: t.metrics.likes,
+          comments: t.metrics.comments,
+          shares: t.metrics.shares,
+          saves: t.metrics.saves,
+          totalInteractions: t.metrics.totalInteractions,
+          profileVisits: t.metrics.profileVisits,
+          follows: t.metrics.follows,
+          avgWatchTimeMs: t.metrics.avgWatchTimeMs,
+          fetchedAt: t.metrics.fetchedAt,
+        },
         account: { ...account, tokenExpiresAt: token?.expiresAt ?? null },
       };
     }),

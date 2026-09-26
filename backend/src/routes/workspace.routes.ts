@@ -1,5 +1,6 @@
 import express, { Router } from "express";
 import * as ai from "../controllers/ai.controller.js";
+import * as analytics from "../controllers/analytics.controller.js";
 import * as content from "../controllers/content.controller.js";
 import * as ws from "../controllers/workspace.controller.js";
 import { aiLimiter, authLimiter } from "../middleware/rateLimits.js";
@@ -41,6 +42,11 @@ workspaceRouter.post("/:workspaceId/ai/requests/:requestId/feedback", requireWor
 workspaceRouter.get("/:workspaceId/ai/usage", requireWorkspace("VIEWER"), ai.usage);
 workspaceRouter.get("/:workspaceId/brand-voice", requireWorkspace("VIEWER"), ai.getVoice);
 workspaceRouter.put("/:workspaceId/brand-voice", requireWorkspace("ADMIN"), validateBody(brandVoiceSchema), ai.putVoice);
+
+// Analytics: read from our own tables, filled by the worker.
+workspaceRouter.get("/:workspaceId/analytics/overview", requireWorkspace("VIEWER"), analytics.overview);
+workspaceRouter.get("/:workspaceId/analytics/posts", requireWorkspace("VIEWER"), analytics.topPosts);
+workspaceRouter.get("/:workspaceId/analytics/best-times", requireWorkspace("VIEWER"), analytics.bestTimes);
 
 // /api/v1/integrations: called by the platforms, not by our frontend, so no requireAuth.
 export const integrationRouter = Router();

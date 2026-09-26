@@ -218,29 +218,36 @@ model WorkspaceMember {
 
 /// A social media account connected to a workspace (e.g. an Instagram business account).
 model SocialAccount {
-  id            String              @id @default(uuid(7)) @db.Uuid
-  workspaceId   String              @map("workspace_id") @db.Uuid
-  platform      SocialPlatform
+  id                String              @id @default(uuid(7)) @db.Uuid
+  workspaceId       String              @map("workspace_id") @db.Uuid
+  platform          SocialPlatform
   /// The account's ID on the platform (for Instagram: the professional account ID used to publish).
-  externalId    String              @map("external_id") @db.VarChar(100)
+  externalId        String              @map("external_id") @db.VarChar(100)
   /// App-scoped user ID, where the platform has one. Meta's deauthorize and data-deletion
   /// callbacks identify the user by this ID.
-  appScopedId   String?             @map("app_scoped_id") @db.VarChar(100)
+  appScopedId       String?             @map("app_scoped_id") @db.VarChar(100)
   /// Platform-specific kind, e.g. BUSINESS or CREATOR for Instagram.
-  accountType   String?             @map("account_type") @db.VarChar(30)
-  username      String?             @db.VarChar(100)
-  name          String?             @db.VarChar(200)
-  avatarUrl     String?             @map("avatar_url")
-  status        SocialAccountStatus @default(ACTIVE)
-  connectedById String?             @map("connected_by_id") @db.Uuid
-  lastCheckedAt DateTime?           @map("last_checked_at") @db.Timestamptz(3)
-  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  accountType       String?             @map("account_type") @db.VarChar(30)
+  username          String?             @db.VarChar(100)
+  name              String?             @db.VarChar(200)
+  avatarUrl         String?             @map("avatar_url")
+  status            SocialAccountStatus @default(ACTIVE)
+  connectedById     String?             @map("connected_by_id") @db.Uuid
+  lastCheckedAt     DateTime?           @map("last_checked_at") @db.Timestamptz(3)
+  /// The platform let us read insights (Instagram: instagram_business_manage_insights). Set on
+  /// connect from the granted permissions; cleared when the platform refuses an insights call.
+  insightsAllowed   Boolean             @default(false) @map("insights_allowed")
+  /// When the "when followers are online" data was last fetched.
+  audienceFetchedAt DateTime?           @map("audience_fetched_at") @db.Timestamptz(3)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  connectedBy User?        @relation(fields: [connectedById], references: [id], onDelete: SetNull)
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  connectedBy User?               @relation(fields: [connectedById], references: [id], onDelete: SetNull)
   token       OAuthToken?
   postTargets PostTarget[]
+  dailyStats  AccountDailyStats[]
+  audience    AccountAudience?
 
   @@unique([workspaceId, platform, externalId])
   @@index([platform, externalId])
@@ -439,9 +446,11 @@ model PostTarget {
   createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  post          Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
-  socialAccount SocialAccount    @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  post          Post                 @relation(fields: [postId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount        @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
   attemptLog    PublishAttempt[]
+  metrics       PostTargetMetrics?
+  snapshots     PostMetricSnapshot[]
 
   @@unique([postId, socialAccountId])
   @@index([status, nextAttemptAt])
@@ -543,4 +552,105 @@ model BrandVoice {
   updatedBy User?     @relation(fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@map("brand_voices")
+}
+
+// ─── Analytics ───────────────────────────────────────────────────────────────
+
+enum MetricsStatus {
+  /// Waiting for its first collection.
+  PENDING
+  OK
+  /// The post no longer exists on the platform, or it has no insights; not checked again.
+  UNAVAILABLE
+
+  @@map("metrics_status")
+}
+
+/**
+ * Latest numbers for one published target. Collected on a decaying schedule after publishing
+ * (see jobs/analytics.ts); numbers the platform doesn't report for a format stay null.
+ */
+model PostTargetMetrics {
+  postTargetId      String        @id @map("post_target_id") @db.Uuid
+  status            MetricsStatus @default(PENDING)
+  views             Int?
+  reach             Int?
+  likes             Int?
+  comments          Int?
+  shares            Int?
+  saves             Int?
+  totalInteractions Int?          @map("total_interactions")
+  profileVisits     Int?          @map("profile_visits")
+  follows           Int?
+  /// Reels only.
+  avgWatchTimeMs    Int?          @map("avg_watch_time_ms")
+  fetchedAt         DateTime?     @map("fetched_at") @db.Timestamptz(3)
+  /// When to collect next; null when collection has finished.
+  nextFetchAt       DateTime?     @map("next_fetch_at") @db.Timestamptz(3)
+  fetchCount        Int           @default(0) @map("fetch_count")
+  lastError         String?       @map("last_error")
+
+  postTarget PostTarget @relation(fields: [postTargetId], references: [id], onDelete: Cascade)
+
+  @@index([nextFetchAt])
+  @@map("post_target_metrics")
+}
+
+/**
+ * Each collection of a target's numbers, for "how it grew" charts.
+ */
+model PostMetricSnapshot {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  postTargetId      String   @map("post_target_id") @db.Uuid
+  capturedAt        DateTime @map("captured_at") @db.Timestamptz(3)
+  views             Int?
+  reach             Int?
+  totalInteractions Int?     @map("total_interactions")
+
+  postTarget PostTarget @relation(fields: [postTargetId], references: [id], onDelete: Cascade)
+
+  @@index([postTargetId, capturedAt])
+  @@map("post_metric_snapshots")
+}
+
+/**
+ * One account's numbers for one day (UTC calendar day).
+ */
+model AccountDailyStats {
+  socialAccountId   String    @map("social_account_id") @db.Uuid
+  date              DateTime  @db.Date
+  /// Follower count sampled during that day (not from insights, so it works for any account size).
+  followers         Int?
+  reach             Int?
+  views             Int?
+  accountsEngaged   Int?      @map("accounts_engaged")
+  totalInteractions Int?      @map("total_interactions")
+  likes             Int?
+  comments          Int?
+  shares            Int?
+  saves             Int?
+  profileLinksTaps  Int?      @map("profile_links_taps")
+  follows           Int?
+  unfollows         Int?
+  /// When the insights for this day were last fetched; null while only the follower count is known.
+  insightsFetchedAt DateTime? @map("insights_fetched_at") @db.Timestamptz(3)
+
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@id([socialAccountId, date])
+  @@map("account_daily_stats")
+}
+
+/**
+ * When the account's followers are online: average per UTC weekday (0 = Sunday) × hour.
+ */
+model AccountAudience {
+  socialAccountId String   @id @map("social_account_id") @db.Uuid
+  /// 7 × 24 numbers, or null when the platform has no data (e.g. under 100 followers).
+  onlineGrid      Json?    @map("online_grid")
+  fetchedAt       DateTime @map("fetched_at") @db.Timestamptz(3)
+
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@map("account_audience")
 }

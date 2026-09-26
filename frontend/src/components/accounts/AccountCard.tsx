@@ -31,6 +31,8 @@ export function AccountCard({
   const status = statusLabel[account.status];
   const handle = account.username ? `@${account.username}` : account.name ?? account.externalId;
   const needsAttention = account.status === "NEEDS_REAUTH" || account.status === "REVOKED";
+  // Connected before analytics existed, or the insights permission wasn't granted.
+  const analyticsOff = account.status === "ACTIVE" && !account.insightsAllowed;
 
   return (
     <div className="rounded-2xl border border-neutral-200 p-4 dark:border-neutral-800">
@@ -62,12 +64,15 @@ export function AccountCard({
               ? "Access was removed from the Instagram side. Reconnect to publish again."
               : null}
       </p>
+      {analyticsOff ? (
+        <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">Analytics are off: reconnect and allow access to insights.</p>
+      ) : null}
 
       {canManage ? (
         <div className="mt-4 flex flex-wrap gap-2">
-          {needsAttention ? (
+          {needsAttention || analyticsOff ? (
             <div className="w-auto">
-              <Button loading={reconnecting} onClick={onReconnect}>
+              <Button variant={needsAttention ? "primary" : "secondary"} loading={reconnecting} onClick={onReconnect}>
                 Reconnect
               </Button>
             </div>

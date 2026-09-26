@@ -3,6 +3,7 @@ import type { PlatformAdapter, TokenSet } from "../types.js";
 import { PlatformApiError } from "../types.js";
 import { instagramCapabilities } from "./capabilities.js";
 import * as ig from "./client.js";
+import { instagramInsights } from "./insights.js";
 import * as publisher from "./publisher.js";
 
 function app(): ig.InstagramAppConfig {
@@ -55,4 +56,5 @@ export const instagramAdapter: PlatformAdapter = {
   chooseFormat: publisher.chooseFormat,
   validatePost: publisher.validatePost,
   publish: (ctx) => publisher.publish(app(), ctx),
+  insights: instagramInsights(app),
 };

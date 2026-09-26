@@ -197,7 +197,7 @@ describe("connecting Instagram", () => {
     expect(url.searchParams.get("client_id")).toBe(env.instagram!.appId);
     expect(url.searchParams.get("redirect_uri")).toBe(env.instagram!.redirectUri);
     expect(url.searchParams.get("response_type")).toBe("code");
-    expect(url.searchParams.get("scope")).toBe("instagram_business_basic,instagram_business_content_publish");
+    expect(url.searchParams.get("scope")).toBe("instagram_business_basic,instagram_business_content_publish,instagram_business_manage_insights");
 
     const state = url.searchParams.get("state")!;
     const stored = await prisma.oAuthConnectState.findUniqueOrThrow({ where: { stateHash: hashToken(state) } });
@@ -231,6 +231,8 @@ describe("connecting Instagram", () => {
     expect(account.token!.accessTokenEnc).not.toContain("long-token-1");
     expect(decryptToken(account.token!.accessTokenEnc)).toBe("long-token-1");
     expect(account.token!.scopes).toEqual(["instagram_business_basic", "instagram_business_content_publish"]);
+    // The user didn't grant the insights permission, so analytics stays off for this account.
+    expect(account.insightsAllowed).toBe(false);
     const daysLeft = (account.token!.expiresAt!.getTime() - Date.now()) / 86_400_000;
     expect(daysLeft).toBeGreaterThan(59);
 

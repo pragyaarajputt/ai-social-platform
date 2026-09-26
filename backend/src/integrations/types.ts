@@ -68,6 +68,53 @@ export interface PublishContext {
   startedAt: Date;
 }
 
+// ─── Analytics ──────────────────────────────────────────────────────────────
+
+/** A post's numbers. Metrics a platform doesn't report for the format are left out. */
+export interface PostMetrics {
+  views?: number;
+  reach?: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  saves?: number;
+  totalInteractions?: number;
+  profileVisits?: number;
+  follows?: number;
+  avgWatchTimeMs?: number;
+}
+
+/** An account's numbers for one day. */
+export interface AccountDayMetrics {
+  reach?: number;
+  views?: number;
+  accountsEngaged?: number;
+  totalInteractions?: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  saves?: number;
+  profileLinksTaps?: number;
+  follows?: number;
+  unfollows?: number;
+}
+
+export interface InsightsContext {
+  accessToken: string;
+  accountExternalId: string;
+}
+
+export interface InsightsProvider {
+  /** The permission the account must grant for insights. */
+  requiredScope: string;
+  postMetrics(ctx: InsightsContext, externalPostId: string, format: PostFormat): Promise<PostMetrics>;
+  /** Numbers for the UTC day starting at `dayStart`. */
+  accountDay(ctx: InsightsContext, dayStart: Date): Promise<AccountDayMetrics>;
+  followersCount(ctx: InsightsContext): Promise<number | undefined>;
+  /** Average followers online per UTC weekday (0 = Sunday) × hour; null when there's no data. */
+  onlineFollowers(ctx: InsightsContext): Promise<number[][] | null>;
+}
+
 /**
  * One implementation per platform. The rest of the app only talks to this interface, so adding a
  * platform means writing one adapter.
@@ -94,6 +141,8 @@ export interface PlatformAdapter {
    * PlatformApiError on failure (see isRetryable).
    */
   publish(ctx: PublishContext): Promise<PublishResult>;
+  /** Reading post and account numbers. Absent for platforms without analytics yet. */
+  insights?: InsightsProvider;
 }
 
 /** An error from a platform API, with a code we can act on. */

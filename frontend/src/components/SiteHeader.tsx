@@ -12,7 +12,7 @@ export function SiteHeader() {
         <Link href="/" className="font-semibold">
           AI Social
         </Link>
-        <div className="flex items-center gap-4 text-sm">
+        <div className="flex items-center gap-3 overflow-x-auto text-sm sm:gap-4">
           {status === "authenticated" ? (
             <>
               <Link href="/" className="hover:underline">
@@ -23,6 +23,9 @@ export function SiteHeader() {
               </Link>
               <Link href="/calendar" className="hover:underline">
                 Calendar
+              </Link>
+              <Link href="/analytics" className="hover:underline">
+                Analytics
               </Link>
               <Link href="/accounts" className="hover:underline">
                 Accounts

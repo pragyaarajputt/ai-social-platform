@@ -35,6 +35,7 @@ const publicAccountSelect = {
   name: true,
   avatarUrl: true,
   status: true,
+  insightsAllowed: true,
   createdAt: true,
   updatedAt: true,
   token: { select: { expiresAt: true, lastRefreshedAt: true } },
@@ -124,6 +125,8 @@ export async function completeConnect(params: {
     name: profile.name ?? null,
     avatarUrl: profile.avatarUrl ?? null,
     status: "ACTIVE" as const,
+    // Reconnecting with the insights permission turns analytics (back) on.
+    insightsAllowed: adapter.insights ? tokens.scopes.includes(adapter.insights.requiredScope) : false,
     connectedById: userId,
     lastCheckedAt: new Date(),
   };

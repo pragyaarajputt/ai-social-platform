@@ -28,6 +28,23 @@ interface Fake {
   /** Respond to container creation with these errors first. */
   createFailures: { status: number; body: unknown }[];
   cloudinary: Map<string, Record<string, unknown>>;
+  insights: {
+    /** Media insight values by metric name (the same for every post). */
+    media: Record<string, number>;
+    /** Account insight values for the day starting at `since` (unix seconds). */
+    accountDay: (since: number) => Record<string, number>;
+    follows: number;
+    unfollows: number;
+    followers: number;
+    /** online_followers values, as Instagram returns them. */
+    online: { value: Record<string, number>; end_time: string }[];
+    /** Media IDs that no longer exist on Instagram. */
+    deleted: Set<string>;
+    /** Answer every insights call with this error. */
+    error: { status: number; body: unknown } | null;
+    /** Every insights-related call: "media:<id>", "account:<metric>:<since>", "followers", "online". */
+    calls: string[];
+  };
   claude: {
     /** Request bodies sent to the Claude API, with their beta header. */
     requests: { body: Record<string, any>; beta: string | null }[];
@@ -55,6 +72,17 @@ export function installFakes() {
     createFailures: [],
     cloudinary: new Map(),
     claude: { requests: [], replies: [] },
+    insights: {
+      media: { views: 1200, reach: 800, likes: 90, comments: 12, shares: 7, saved: 15, total_interactions: 124, profile_visits: 20, follows: 3, ig_reels_avg_watch_time: 6400 },
+      accountDay: () => ({ reach: 500, views: 900, accounts_engaged: 60, total_interactions: 80, likes: 50, comments: 10, shares: 5, saves: 15, profile_links_taps: 4 }),
+      follows: 6,
+      unfollows: 2,
+      followers: 1520,
+      online: [],
+      deleted: new Set(),
+      error: null,
+      calls: [],
+    },
   };
   const realFetch = globalThis.fetch;
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -103,6 +131,45 @@ export function installFakes() {
         return json(200, { id });
       }
       if (path === `${IG_USER}/media`) return json(200, { data: fake.media });
+
+      // Insights
+      const ins = fake.insights;
+      const mediaInsights = /^(m\d+)\/insights$/.exec(path);
+      const isInsights = mediaInsights || path === `${IG_USER}/insights` || (path === IG_USER && form.get("fields") === "followers_count");
+      if (isInsights && ins.error) {
+        ins.calls.push(`error:${path}`);
+        return json(ins.error.status, ins.error.body);
+      }
+      if (mediaInsights) {
+        ins.calls.push(`media:${mediaInsights[1]}`);
+        if (ins.deleted.has(mediaInsights[1]!)) return json(400, { error: { message: "Media does not exist", code: 100, error_subcode: 33 } });
+        const metrics = form.get("metric")!.split(",");
+        return json(200, { data: metrics.map((name) => ({ name, period: "lifetime", values: [{ value: ins.media[name] ?? 0 }] })) });
+      }
+      if (path === `${IG_USER}/insights`) {
+        const metric = form.get("metric")!;
+        if (metric === "online_followers") {
+          ins.calls.push("online");
+          return json(200, { data: [{ name: "online_followers", period: "lifetime", values: ins.online }] });
+        }
+        const since = Number(form.get("since"));
+        ins.calls.push(`account:${metric === "follows_and_unfollows" ? "follows" : "main"}:${since}`);
+        if (form.get("metric_type") !== "total_value" || Number(form.get("until")) - since !== 86_400) return json(400, { error: { message: "bad range", code: 100 } });
+        if (metric === "follows_and_unfollows") {
+          return json(200, {
+            data: [{ name: metric, period: "day", total_value: { value: ins.follows + ins.unfollows, breakdowns: [{ dimension_keys: ["follow_type"], results: [
+              { dimension_values: ["FOLLOWER"], value: ins.follows },
+              { dimension_values: ["NON_FOLLOWER"], value: ins.unfollows },
+            ] }] } }],
+          });
+        }
+        const values = ins.accountDay(since);
+        return json(200, { data: metric.split(",").map((name) => ({ name, period: "day", total_value: { value: values[name] ?? 0 } })) });
+      }
+      if (path === IG_USER && form.get("fields") === "followers_count") {
+        ins.calls.push("followers");
+        return json(200, { id: IG_USER, followers_count: ins.followers });
+      }
       const container = fake.containers.get(path);
       if (container) {
         const statusCode = container.published ? "PUBLISHED" : container.statuses.length > 1 ? container.statuses.shift()! : container.statuses[0]!;
@@ -154,7 +221,7 @@ export async function signUp() {
 export type User = Awaited<ReturnType<typeof signUp>>;
 export const auth = (u: User) => ({ Authorization: `Bearer ${u.token}` });
 
-export async function connectAccount(u: User, opts: { externalId?: string; username?: string; status?: "ACTIVE" | "NEEDS_REAUTH" } = {}) {
+export async function connectAccount(u: User, opts: { externalId?: string; username?: string; status?: "ACTIVE" | "NEEDS_REAUTH"; insightsAllowed?: boolean } = {}) {
   return prisma.socialAccount.create({
     data: {
       workspaceId: u.workspaceId,
@@ -163,6 +230,7 @@ export async function connectAccount(u: User, opts: { externalId?: string; usern
       accountType: "BUSINESS",
       username: opts.username ?? "brand",
       status: opts.status ?? "ACTIVE",
+      insightsAllowed: opts.insightsAllowed ?? true,
       connectedById: u.userId,
       token: { create: { accessTokenEnc: encryptToken("ig-token"), expiresAt: new Date(Date.now() + 50 * 86_400_000), scopes: [] } },
     },

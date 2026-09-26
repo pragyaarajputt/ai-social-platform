@@ -2,7 +2,7 @@
 
 Connect your social accounts (Instagram first; LinkedIn, Facebook, Threads, X, YouTube and TikTok planned), write a post once with AI help, and publish or schedule it to every platform from one dashboard.
 
-**Status:** Phase 7. Connect Instagram, upload photos and videos, publish to one or more Instagram accounts (single image, carousel, Reel) **now or on a schedule**, plan posts on a calendar, and write with **AI**: captions in five tones (from an idea and/or the photos), hashtag suggestions, rewrites, and a workspace brand voice.
+**Status:** Phase 8. Connect Instagram, upload photos and videos, publish to one or more Instagram accounts (single image, carousel, Reel) **now or on a schedule**, plan posts on a calendar, and write with **AI**: captions in five tones (from an idea and/or the photos), hashtag suggestions, rewrites, and a workspace brand voice. **Analytics**: account reach, views, interactions and followers over time, per-post numbers, top posts (CSV export), and when followers are online.
 
 > `docs/PRD.md` describes the original social-network idea and is out of date. The product is now a social media management tool.
 
@@ -23,9 +23,9 @@ Connect your social accounts (Instagram first; LinkedIn, Facebook, Threads, X, Y
 frontend/
   src/
     app/         pages: (auth)/ login, signup, forgot/reset password, verify email;
-                 (protected)/ account, accounts, calendar, posts (list, new, [id], [id]/edit), settings/brand-voice; auth/callback
-    components/  ui/ primitives, ai/ composer AI panel and brand voice, auth/ forms and guards, accounts/, calendar/, posts/, workspace/
-    lib/         API client, session, workspaces, posts + uploads, AI, dates, Instagram rules, form schemas
+                 (protected)/ account, accounts, analytics, calendar, posts (list, new, [id], [id]/edit), settings/brand-voice; auth/callback
+    components/  ui/ primitives, ai/ composer AI panel and brand voice, analytics/ page, charts, heatmap, auth/ forms and guards, accounts/, calendar/, posts/, workspace/
+    lib/         API client, session, workspaces, posts + uploads, AI, analytics, dates, Instagram rules, form schemas
 backend/
   prisma/
     schema.prisma  database schema
@@ -36,7 +36,7 @@ backend/
     config/      environment, app config, Prisma client
     generated/   generated Prisma client (gitignored)
     integrations/ one adapter per social platform (instagram/), shared interface in types.ts
-    jobs/        publish queue: claim, publish, retry
+    jobs/        publish queue (claim, publish, retry) and analytics collection
     storage/     Cloudinary client
     controllers/ request handlers
     middleware/  express middleware (auth, validation, rate limits, errors)
@@ -47,7 +47,7 @@ backend/
     utils/       helpers
     app.ts       express app setup
     server.ts    API entry point
-    worker.ts    background jobs (publishing every 5 s, hourly token refresh), run separately
+    worker.ts    background jobs (publishing every 5 s; hourly token refresh, warnings, analytics), run separately
   tests/         API integration tests (vitest + supertest)
 docs/
   PRD.md         product requirements
@@ -207,11 +207,44 @@ In the composer, under the caption. Every result is a **suggestion**: nothing ch
 - **Logging:** every request is stored in `ai_requests` with model, prompt version (`captions.v1`, …), tokens, **estimated cost**, latency, status, the suggestions, and feedback.
 - **Marking:** posts where a suggestion was applied are marked `aiAssisted` (internal only).
 
+## Analytics
+
+Numbers come from Instagram's insights API and are stored in our own tables by the worker, so pages load from our database and never wait on Instagram. **Instagram data can be up to 48 hours late**, and only organic activity is counted.
+
+**Permission:** needs `instagram_business_manage_insights`, now requested when connecting.
+- **Existing connections:** accounts connected before Phase 8, or where the permission wasn't granted, show "Analytics are off: reconnect" on the Accounts page. Publishing is unaffected.
+- **Meta app setup:** add the permission to your Meta app. It works for app roles right away; other users need App Review.
+- **Permission removed later:** if Instagram starts refusing insights, analytics turns off for that account (`insights_allowed = false`, audit `social_account.insights_denied`) until it's reconnected.
+
+| What | How it's collected (`backend/src/jobs/analytics.ts`, hourly) | Where it shows |
+| --- | --- | --- |
+| Post numbers: views, reach, likes, comments, shares, saves, interactions, profile visits, follows; Reels: avg watch time | 1 h, 6 h, 1 d, 3 d, 7 d, 14 d, 30 d after publishing, then weekly until 90 days; each collection is also kept as a snapshot. A post deleted on Instagram is marked unavailable and not checked again | Post page, top posts |
+| Account day: reach, views, accounts engaged, interactions, likes, comments, shares, saves, link taps, follows, unfollows | One row per **UTC day**, last 30 days backfilled; a day is fetched again until it's 3 days old (late data) | Analytics page: cards (vs previous period), daily chart |
+| Followers | `followers_count` sampled once a day (works for any account size) | Followers card and change |
+| When followers are online | `online_followers` daily, averaged per UTC weekday × hour; shown in the browser's time zone. **Only for accounts with 100+ followers** | Heatmap; hint in the composer's Schedule picker |
+
+Each account has a budget of 40 Instagram calls per hourly run, so a first 30-day backfill is spread over a few runs instead of hitting rate limits. A rate limit or outage stops that account's run and it continues next hour.
+
+**Endpoints** (VIEWER+):
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /workspaces/:id/analytics/overview?accountId=&days=7|30|90` | Totals and previous-period totals, engagement rate (interactions ÷ reach), followers and change, daily series |
+| `GET …/analytics/posts?accountId=&days=&sort=views|reach|interactions|engagement|recent` | Published posts with their numbers |
+| `GET …/analytics/best-times?accountId=` | The weekday × hour grid |
+
+Post responses include each target's `metrics`.
+
+**Worth knowing:**
+- **Reach over a range** is the sum of daily reach: someone reached on two days counts twice.
+- **Only posts published through AI Social** have per-post numbers; account numbers cover everything on the account.
+- **Day boundaries:** Instagram decides where each day ends. Days here are requested as UTC days; confirm against a real account.
+
 ## Tests
 
 ```bash
-cd backend && npm test    # API integration tests (auth, workspaces, Instagram connect, publishing, scheduling, AI; fake Instagram, Cloudinary and Claude APIs, so nothing is billed)
-cd frontend && npm test   # API client, session, dates, Instagram rules, hashtag merge and rewrite diff unit tests
+cd backend && npm test    # API integration tests (auth, workspaces, Instagram connect, publishing, scheduling, AI, analytics; fake Instagram, Cloudinary and Claude APIs, so nothing is billed)
+cd frontend && npm test   # API client, session, dates, Instagram rules, hashtag merge, rewrite diff, analytics maths, time zones and CSV unit tests
 ```
 
 Backend tests run against a separate `social_test` database, derived from `DATABASE_URL` in `.env` (or set `TEST_DATABASE_URL`). Migrations are applied automatically, and tables are emptied before each test.
@@ -223,7 +256,7 @@ Backend tests run against a separate `social_test` database, derived from `DATAB
 | backend | `npm run dev` | Start with auto-reload (nodemon + tsx) |
 | backend | `npm run build` | Compile TypeScript to `dist/` |
 | backend | `npm start` | Run the compiled build |
-| backend | `npm run worker` | Run background jobs: publishing (including scheduled posts), token refresh, scheduled-post warnings. **Posts only go out while this runs** |
+| backend | `npm run worker` | Run background jobs: publishing (including scheduled posts), token refresh, scheduled-post warnings, analytics collection. **Posts only go out, and numbers only update, while this runs** |
 | backend | `npm run typecheck` | Type-check without emitting |
 | backend | `npm test` | Run API tests |
 | backend | `npm run db:migrate` | Create and apply migrations in development |

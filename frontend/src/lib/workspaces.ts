@@ -21,6 +21,8 @@ export interface SocialAccount {
   name: string | null;
   avatarUrl: string | null;
   status: "ACTIVE" | "NEEDS_REAUTH" | "REVOKED" | "DISCONNECTED";
+  /** Instagram allowed reading insights; false until reconnected with that permission. */
+  insightsAllowed: boolean;
   createdAt: string;
   tokenExpiresAt: string | null;
   tokenRefreshedAt: string | null;
