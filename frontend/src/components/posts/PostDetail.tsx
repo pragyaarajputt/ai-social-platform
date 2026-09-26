@@ -1,5 +1,6 @@
 "use client";
 
+import { canEditPosts } from "@/lib/team";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -24,6 +25,7 @@ type Confirm = "cancel" | "publish" | "delete" | null;
 
 export function PostDetail({ postId }: { postId: string }) {
   const { workspace } = useWorkspace();
+  const canEdit = workspace ? canEditPosts(workspace.role) : false;
   const router = useRouter();
   const workspaceId = workspace?.id;
   const [post, setPost] = useState<Post | null>(null);
@@ -84,7 +86,7 @@ export function PostDetail({ postId }: { postId: string }) {
     <Page post={post}>
       {error ? <Alert tone="error">{error}</Alert> : null}
 
-      {scheduled && post.scheduledAt ? (
+      {scheduled && post.scheduledAt && canEdit ? (
         <div className="mt-4 rounded-2xl border border-neutral-200 p-4 dark:border-neutral-800">
           <p className="text-sm">
             Scheduled for <strong>{formatDateTime(new Date(post.scheduledAt))}</strong>{" "}
@@ -158,12 +160,12 @@ export function PostDetail({ postId }: { postId: string }) {
       <h2 className="mt-8 text-sm font-medium text-neutral-500">Accounts</h2>
       <ul className="mt-2 flex flex-col gap-3">
         {post.targets.map((t) => (
-          <TargetRow key={t.id} target={t} retrying={busy === t.id} onRetry={() => run(t.id, () => retryTarget(workspaceId!, postId, t.id))} />
+          <TargetRow key={t.id} target={t} canEdit={canEdit} retrying={busy === t.id} onRetry={() => run(t.id, () => retryTarget(workspaceId!, postId, t.id))} />
         ))}
       </ul>
       {inProgress ? <p className="mt-4 text-xs text-neutral-500">This page updates automatically.</p> : null}
 
-      {deletable ? (
+      {deletable && canEdit ? (
         <div className="mt-10 border-t border-neutral-200 pt-4 dark:border-neutral-800">
           {confirm === "delete" ? (
             <div className="flex flex-col gap-2 text-sm">
@@ -227,7 +229,7 @@ function TargetMetricsView({ target: t }: { target: PostTarget }) {
   );
 }
 
-function TargetRow({ target: t, retrying, onRetry }: { target: PostTarget; retrying: boolean; onRetry: () => void }) {
+function TargetRow({ target: t, canEdit, retrying, onRetry }: { target: PostTarget; canEdit: boolean; retrying: boolean; onRetry: () => void }) {
   return (
     <li className="rounded-2xl border border-neutral-200 p-4 dark:border-neutral-800">
       <div className="flex items-center justify-between gap-3">
@@ -267,7 +269,7 @@ function TargetRow({ target: t, retrying, onRetry }: { target: PostTarget; retry
         <div className="mt-3 flex flex-col gap-3">
           <p className="text-sm text-red-700 dark:text-red-400">{t.lastError}</p>
           <div className="flex gap-2">
-            {t.account.status === "ACTIVE" ? (
+            {!canEdit ? null : t.account.status === "ACTIVE" ? (
               <div>
                 <Button variant="secondary" loading={retrying} onClick={onRetry}>
                   Retry

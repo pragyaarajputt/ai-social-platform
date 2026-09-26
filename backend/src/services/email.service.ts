@@ -59,3 +59,27 @@ export function sendScheduledPostWarning(
       `\n\n"${excerpt}"\n\nFix it here: ${link}`,
   });
 }
+
+const roleNames: Record<string, string> = { ADMIN: "an admin", EDITOR: "an editor", VIEWER: "a viewer" };
+
+export function sendWorkspaceInvite(
+  to: string,
+  invite: { workspaceName: string; inviterName: string; role: string; link: string; expiresAt: Date },
+): Promise<void> {
+  return send({
+    to,
+    subject: `${invite.inviterName} invited you to ${invite.workspaceName}`,
+    text:
+      `${invite.inviterName} invited you to join "${invite.workspaceName}" on AI Social as ${roleNames[invite.role] ?? invite.role.toLowerCase()}.
+
+` +
+      `Accept the invite here:
+
+${invite.link}
+
+` +
+      `Sign in (or create an account) with this email address, ${to}. The link works once and expires on ${invite.expiresAt.toUTCString()}.
+` +
+      `If you weren't expecting this, you can ignore it.`,
+  });
+}

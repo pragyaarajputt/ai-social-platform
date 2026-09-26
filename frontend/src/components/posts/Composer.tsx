@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { ApiError } from "@/lib/api";
 import { PlatformIcon } from "@/components/PlatformIcon";
+import { canEditPosts } from "@/lib/team";
 import { countHashtags, countMentions, INSTAGRAM } from "@/lib/instagramRules";
 import { CAPTION_MAX, formatFor, formatLabel, platformName, problemsFor as platformProblems } from "@/lib/platforms";
 import { formatDateTime, formatRelative, fromDateTimeLocal, localTimeZone, toDateTimeLocal, useNow } from "@/lib/dates";
@@ -77,6 +78,13 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
   }, [workspaceId, editing]);
 
   if (!workspaceId || accounts === null) return <PageLoading />;
+  if (!canEditPosts(workspace!.role)) {
+    return (
+      <Page title={editing ? "Edit scheduled post" : "Create post"}>
+        <Alert tone="info">You have view-only access to this workspace. Ask an admin to make you an editor to create or change posts.</Alert>
+      </Page>
+    );
+  }
 
   const ready = accounts.filter((a) => a.status === "ACTIVE");
   const notReady = accounts.filter((a) => a.status !== "ACTIVE");

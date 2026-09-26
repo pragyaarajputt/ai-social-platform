@@ -1,5 +1,6 @@
 "use client";
 
+import { IfCanEdit } from "@/components/workspace/IfCanEdit";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -45,9 +46,11 @@ export function PostList() {
     <div className="mx-auto w-full max-w-3xl px-4 py-10">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Posts</h1>
-        <Link href="/posts/new" className="inline-flex h-10 items-center rounded-lg bg-foreground px-4 text-sm font-medium text-background">
-          Create post
-        </Link>
+        <IfCanEdit>
+          <Link href="/posts/new" className="inline-flex h-10 items-center rounded-lg bg-foreground px-4 text-sm font-medium text-background">
+            Create post
+          </Link>
+        </IfCanEdit>
       </div>
 
       <div role="tablist" aria-label="Filter posts" className="mb-4 flex gap-1 border-b border-neutral-200 dark:border-neutral-800">
@@ -73,9 +76,11 @@ export function PostList() {
       ) : posts.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-neutral-300 px-4 py-10 text-center text-sm text-neutral-500 dark:border-neutral-700">
           {tab.key === "scheduled" ? "Nothing scheduled." : "No posts here yet."}{" "}
-          <Link href="/posts/new" className="font-medium text-foreground underline">
-            Create a post
-          </Link>
+          <IfCanEdit>
+            <Link href="/posts/new" className="font-medium text-foreground underline">
+              Create a post
+            </Link>
+          </IfCanEdit>
         </p>
       ) : (
         <ul className="flex flex-col gap-3">

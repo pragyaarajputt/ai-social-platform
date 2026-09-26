@@ -2,11 +2,12 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { FormField } from "@/components/ui/FormField";
-import { signup } from "@/lib/auth";
+import { safeNextPath, signup } from "@/lib/auth";
 import { applyServerError } from "@/lib/form-errors";
 import { signupSchema, type SignupValues } from "@/lib/schemas";
 import { AuthCard } from "./AuthCard";
@@ -14,6 +15,8 @@ import { GoogleButton } from "./GoogleButton";
 import { RedirectIfAuthenticated } from "./RequireAuth";
 
 export function SignupForm() {
+  // e.g. back to an invite after creating the account.
+  const next = safeNextPath(useSearchParams().get("next"));
   const {
     register,
     handleSubmit,
@@ -23,21 +26,21 @@ export function SignupForm() {
 
   async function onSubmit(values: SignupValues) {
     try {
-      await signup(values); // RedirectIfAuthenticated navigates home
+      await signup(values); // RedirectIfAuthenticated navigates to `next`
     } catch (err) {
       applyServerError(err, setError, ["email", "username", "displayName", "password"]);
     }
   }
 
   return (
-    <RedirectIfAuthenticated to="/">
+    <RedirectIfAuthenticated to={next}>
       <AuthCard
         title="Create your account"
         subtitle="Write better posts with AI, from day one."
         footer={
           <>
             Already have an account?{" "}
-            <Link href="/login" className="font-medium text-foreground hover:underline">
+            <Link href={next === "/" ? "/login" : `/login?next=${encodeURIComponent(next)}`} className="font-medium text-foreground hover:underline">
               Log in
             </Link>
           </>

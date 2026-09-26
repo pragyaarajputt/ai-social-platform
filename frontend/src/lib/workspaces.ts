@@ -7,6 +7,8 @@ export interface Workspace {
   name: string;
   slug: string;
   timezone: string;
+  /** Created at sign-up. */
+  isPersonal: boolean;
   role: WorkspaceRole;
 }
 
@@ -25,6 +27,8 @@ export interface SocialAccount {
   insightsAllowed: boolean;
   /** When the daily check last confirmed the connection works. */
   lastCheckedAt: string | null;
+  /** Who connected it: the platform's tokens are issued to that person's own login. */
+  connectedBy: { id: string; name: string; stillMember: boolean } | null;
   createdAt: string;
   tokenExpiresAt: string | null;
   tokenRefreshedAt: string | null;

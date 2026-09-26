@@ -12,6 +12,22 @@ const explain = (risk: Exclude<TargetRisk, null>, username: string | null) => {
 };
 
 /**
+ * The post's author, while they're still a member of its workspace. Otherwise (they left or were
+ * removed), the workspace's owner and admins, so the warning still reaches someone who can act.
+ */
+async function recipients(post: { workspaceId: string; authorId: string | null; author: { email: string } | null }): Promise<string[]> {
+  if (post.authorId && post.author?.email) {
+    const member = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: post.workspaceId, userId: post.authorId } } });
+    if (member) return [post.author.email];
+  }
+  const managers = await prisma.workspaceMember.findMany({
+    where: { workspaceId: post.workspaceId, role: { in: ["OWNER", "ADMIN"] } },
+    select: { user: { select: { email: true } } },
+  });
+  return managers.map((m) => m.user.email);
+}
+
+/**
  * Warns authors, once per post target, about scheduled posts due in the next 24 hours that will
  * probably fail (account needs reconnecting, or access expires first). Run hourly by the worker.
  */
@@ -24,14 +40,13 @@ export async function runPreflightChecks(now = new Date()): Promise<{ warnedPost
 
   for (const [postId, items] of byPost) {
     const post = items[0]!.target.post;
-    if (post.author?.email) {
-      await sendScheduledPostWarning(post.author.email, {
-        postId,
-        caption: post.caption,
-        scheduledAt: items[0]!.target.scheduledAt!,
-        problems: items.map((i) => explain(i.risk, i.target.socialAccount.username)),
-      });
-    }
+    const warning = {
+      postId,
+      caption: post.caption,
+      scheduledAt: items[0]!.target.scheduledAt!,
+      problems: items.map((i) => explain(i.risk, i.target.socialAccount.username)),
+    };
+    for (const to of await recipients(post)) await sendScheduledPostWarning(to, warning);
     await prisma.postTarget.updateMany({ where: { id: { in: items.map((i) => i.target.id) } }, data: { preflightWarnedAt: now } });
   }
   return { warnedPosts: byPost.size, targets: risky.length };

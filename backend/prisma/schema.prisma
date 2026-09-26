@@ -97,6 +97,8 @@ model User {
   oauthConnectStates OAuthConnectState[]
   aiRequests         AiRequest[]
   brandVoiceEdits    BrandVoice[]
+  invitesSent        WorkspaceInvite[]   @relation("InvitedBy")
+  invitesAccepted    WorkspaceInvite[]   @relation("AcceptedBy")
 
   @@map("users")
 }
@@ -180,13 +182,15 @@ model VerificationToken {
 
 /// Everything users create (connected accounts, posts, media) belongs to a workspace, not a user.
 model Workspace {
-  id        String   @id @default(uuid(7)) @db.Uuid
-  name      String   @db.VarChar(80)
-  slug      String   @unique @db.VarChar(60)
+  id         String   @id @default(uuid(7)) @db.Uuid
+  name       String   @db.VarChar(80)
+  slug       String   @unique @db.VarChar(60)
   /// IANA time zone, used for scheduling and calendar display.
-  timezone  String   @default("UTC") @db.VarChar(64)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  timezone   String   @default("UTC") @db.VarChar(64)
+  /// Created at sign-up. It can't be deleted while it's the owner's only workspace.
+  isPersonal Boolean  @default(false) @map("is_personal")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   members        WorkspaceMember[]
   socialAccounts SocialAccount[]
@@ -196,6 +200,7 @@ model Workspace {
   posts          Post[]
   aiRequests     AiRequest[]
   brandVoice     BrandVoice?
+  invites        WorkspaceInvite[]
 
   @@map("workspaces")
 }
@@ -212,6 +217,35 @@ model WorkspaceMember {
   @@id([workspaceId, userId])
   @@index([userId])
   @@map("workspace_members")
+}
+
+/**
+ * An invitation to join a workspace, sent by email. Only the token's hash is stored; the link works
+ * once, for 7 days, and only for a signed-in user with the same verified email. One pending invite
+ * per email per workspace (partial unique index in migration team_invites); inviting again resends it.
+ */
+model WorkspaceInvite {
+  id           String        @id @default(uuid(7)) @db.Uuid
+  workspaceId  String        @map("workspace_id") @db.Uuid
+  /// Lowercase.
+  email        String        @db.VarChar(254)
+  /// Never OWNER: ownership is only transferred.
+  role         WorkspaceRole
+  tokenHash    String        @unique @map("token_hash")
+  invitedById  String?       @map("invited_by_id") @db.Uuid
+  expiresAt    DateTime      @map("expires_at") @db.Timestamptz(3)
+  lastSentAt   DateTime      @map("last_sent_at") @db.Timestamptz(3)
+  acceptedAt   DateTime?     @map("accepted_at") @db.Timestamptz(3)
+  acceptedById String?       @map("accepted_by_id") @db.Uuid
+  revokedAt    DateTime?     @map("revoked_at") @db.Timestamptz(3)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy  User?     @relation("InvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  acceptedBy User?     @relation("AcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@map("workspace_invites")
 }
 
 // ─── Social integrations ─────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 "use client";
 
+import { IfCanEdit } from "@/components/workspace/IfCanEdit";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PageLoading } from "@/components/auth/RequireAuth";
@@ -127,9 +128,11 @@ export function CalendarView() {
                           {day.getDate()}
                         </span>
                         {inMonth && day >= today ? (
-                          <Link href="/posts/new" aria-label={`Create a post`} className="text-xs text-neutral-400 hover:text-foreground">
-                            +
-                          </Link>
+                          <IfCanEdit>
+                            <Link href="/posts/new" aria-label={`Create a post`} className="text-xs text-neutral-400 hover:text-foreground">
+                              +
+                            </Link>
+                          </IfCanEdit>
                         ) : null}
                       </div>
                       <ul className="mt-1 flex flex-col gap-1">
@@ -163,9 +166,11 @@ export function CalendarView() {
         {agenda === null ? null : agenda.length === 0 ? (
           <p className="mt-2 text-sm text-neutral-500">
             Nothing scheduled.{" "}
-            <Link href="/posts/new" className="font-medium text-foreground underline">
-              Schedule a post
-            </Link>
+            <IfCanEdit>
+              <Link href="/posts/new" className="font-medium text-foreground underline">
+                Schedule a post
+              </Link>
+            </IfCanEdit>
           </p>
         ) : (
           <ul className="mt-2 flex flex-col gap-2">
@@ -193,9 +198,11 @@ function Wrapper({ children }: { children: React.ReactNode }) {
     <div className="mx-auto w-full max-w-6xl px-4 py-10">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Calendar</h1>
-        <Link href="/posts/new" className="inline-flex h-10 items-center rounded-lg bg-foreground px-4 text-sm font-medium text-background">
-          Create post
-        </Link>
+        <IfCanEdit>
+          <Link href="/posts/new" className="inline-flex h-10 items-center rounded-lg bg-foreground px-4 text-sm font-medium text-background">
+            Create post
+          </Link>
+        </IfCanEdit>
       </div>
       {children}
     </div>

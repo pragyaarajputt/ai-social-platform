@@ -41,6 +41,8 @@ const publicAccountSelect = {
   status: true,
   insightsAllowed: true,
   lastCheckedAt: true,
+  // Shown on the account card: tokens are issued to this person's own login.
+  connectedBy: { select: { id: true, username: true, profile: { select: { displayName: true } } } },
   createdAt: true,
   updatedAt: true,
   token: { select: { expiresAt: true, lastRefreshedAt: true } },
@@ -52,8 +54,15 @@ export async function listSocialAccounts(workspaceId: string) {
     orderBy: { createdAt: "asc" },
     select: publicAccountSelect,
   });
-  return accounts.map(({ token, ...a }) => ({
+  // Whether the person who connected it is still in the workspace: if not, their login still backs the token.
+  const members = new Set(
+    (await prisma.workspaceMember.findMany({ where: { workspaceId }, select: { userId: true } })).map((m) => m.userId),
+  );
+  return accounts.map(({ token, connectedBy, ...a }) => ({
     ...a,
+    connectedBy: connectedBy
+      ? { id: connectedBy.id, name: connectedBy.profile?.displayName ?? connectedBy.username, stillMember: members.has(connectedBy.id) }
+      : null,
     tokenExpiresAt: token?.expiresAt ?? null,
     tokenRefreshedAt: token?.lastRefreshedAt ?? null,
   }));

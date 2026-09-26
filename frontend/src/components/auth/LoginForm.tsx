@@ -46,7 +46,7 @@ export function LoginForm() {
         footer={
           <>
             New here?{" "}
-            <Link href="/signup" className="font-medium text-foreground hover:underline">
+            <Link href={next === "/" ? "/signup" : `/signup?next=${encodeURIComponent(next)}`} className="font-medium text-foreground hover:underline">
               Create an account
             </Link>
           </>

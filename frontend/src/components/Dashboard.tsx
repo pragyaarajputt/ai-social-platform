@@ -1,5 +1,7 @@
 "use client";
 
+import { IfCanEdit } from "@/components/workspace/IfCanEdit";
+import { canEditPosts } from "@/lib/team";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -89,12 +91,14 @@ export function Dashboard() {
           </p>
         </Link>
         <Link
-          href="/posts/new"
+          href={workspace && canEditPosts(workspace.role) ? "/posts/new" : "/posts"}
           className="rounded-2xl border border-neutral-200 p-5 transition hover:border-neutral-400 dark:border-neutral-800 dark:hover:border-neutral-600"
         >
           <p className="text-sm text-neutral-500">Posts</p>
           <p className="mt-1 text-3xl font-semibold">{data?.recent.length ?? 0}</p>
-          <p className="mt-2 text-sm">Create a post →</p>
+          <p className="mt-2 text-sm">
+            <IfCanEdit otherwise="See all posts →">Create a post →</IfCanEdit>
+          </p>
         </Link>
       </div>
 

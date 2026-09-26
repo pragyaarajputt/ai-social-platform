@@ -16,6 +16,7 @@ export function personalWorkspaceMembership(displayName: string) {
       workspace: {
         create: {
           name: `${displayName}'s workspace`.slice(0, 80),
+          isPersonal: true,
           // Random, so it never depends on user input; "ws-" + 12 hex characters.
           slug: `ws-${randomBytes(6).toString("hex")}`,
         },
@@ -28,7 +29,7 @@ export async function listWorkspacesForUser(userId: string) {
   const memberships = await prisma.workspaceMember.findMany({
     where: { userId },
     orderBy: { createdAt: "asc" },
-    select: { role: true, workspace: { select: { id: true, name: true, slug: true, timezone: true } } },
+    select: { role: true, workspace: { select: { id: true, name: true, slug: true, timezone: true, isPersonal: true } } },
   });
   return memberships.map((m) => ({ ...m.workspace, role: m.role }));
 }

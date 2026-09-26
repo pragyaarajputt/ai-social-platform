@@ -85,6 +85,12 @@ export function AccountCard({
               ? `Access was removed on ${platformName(account.platform)}. Reconnect to publish again.`
               : null}
       </p>
+      {account.connectedBy ? (
+        <p className="mt-1 text-xs text-neutral-500">
+          Connected by {account.connectedBy.name}
+          {account.connectedBy.stillMember ? "" : " (no longer in this workspace; reconnect it with your own login to be safe)"}
+        </p>
+      ) : null}
       {account.status === "ACTIVE" && account.lastCheckedAt ? (
         <p className="mt-1 text-xs text-neutral-500">Connection checked {formatRelative(new Date(account.lastCheckedAt), new Date(now))}.</p>
       ) : null}

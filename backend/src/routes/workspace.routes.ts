@@ -2,6 +2,7 @@ import express, { Router } from "express";
 import * as ai from "../controllers/ai.controller.js";
 import * as analytics from "../controllers/analytics.controller.js";
 import * as content from "../controllers/content.controller.js";
+import * as team from "../controllers/team.controller.js";
 import * as ws from "../controllers/workspace.controller.js";
 import { aiLimiter, authLimiter } from "../middleware/rateLimits.js";
 import { requireAuth } from "../middleware/requireAuth.js";
@@ -15,6 +16,20 @@ export const workspaceRouter = Router();
 
 workspaceRouter.use(requireAuth);
 workspaceRouter.get("/", ws.listWorkspaces);
+workspaceRouter.post("/", team.createWorkspace);
+workspaceRouter.patch("/:workspaceId", requireWorkspace("ADMIN"), team.renameWorkspace);
+workspaceRouter.delete("/:workspaceId", requireWorkspace("OWNER"), team.deleteWorkspace);
+
+// Team: members and invites.
+workspaceRouter.get("/:workspaceId/members", requireWorkspace("VIEWER"), team.listMembers);
+workspaceRouter.post("/:workspaceId/members/me/leave", requireWorkspace("VIEWER"), team.leave);
+workspaceRouter.patch("/:workspaceId/members/:userId", requireWorkspace("ADMIN"), team.changeRole);
+workspaceRouter.delete("/:workspaceId/members/:userId", requireWorkspace("ADMIN"), team.removeMember);
+workspaceRouter.post("/:workspaceId/transfer-ownership", requireWorkspace("OWNER"), team.transferOwnership);
+workspaceRouter.get("/:workspaceId/invites", requireWorkspace("ADMIN"), team.listInvites);
+workspaceRouter.post("/:workspaceId/invites", requireWorkspace("ADMIN"), team.createInvite);
+workspaceRouter.post("/:workspaceId/invites/:inviteId/resend", requireWorkspace("ADMIN"), team.resendInvite);
+workspaceRouter.delete("/:workspaceId/invites/:inviteId", requireWorkspace("ADMIN"), team.revokeInvite);
 workspaceRouter.get("/:workspaceId/social-accounts", requireWorkspace("VIEWER"), ws.listAccounts);
 workspaceRouter.post("/:workspaceId/social-accounts/:platform/connect", requireWorkspace("ADMIN"), ws.connectAccount);
 workspaceRouter.get("/:workspaceId/social-accounts/:accountId/disconnect-impact", requireWorkspace("ADMIN"), ws.disconnectImpact);
@@ -48,6 +63,11 @@ workspaceRouter.put("/:workspaceId/brand-voice", requireWorkspace("ADMIN"), vali
 workspaceRouter.get("/:workspaceId/analytics/overview", requireWorkspace("VIEWER"), analytics.overview);
 workspaceRouter.get("/:workspaceId/analytics/posts", requireWorkspace("VIEWER"), analytics.topPosts);
 workspaceRouter.get("/:workspaceId/analytics/best-times", requireWorkspace("VIEWER"), analytics.bestTimes);
+
+// /api/v1/invites: the link in invite emails. Previewing needs no sign-in; accepting does.
+export const inviteRouter = Router();
+inviteRouter.get("/:token", authLimiter, team.previewInvite);
+inviteRouter.post("/:token/accept", requireAuth, authLimiter, team.acceptInvite);
 
 // /api/v1/integrations: called by the platforms, not by our frontend, so no requireAuth.
 export const integrationRouter = Router();

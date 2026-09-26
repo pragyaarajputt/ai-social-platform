@@ -23,7 +23,7 @@ Connect your social accounts (Instagram and Facebook Pages; LinkedIn, Threads, X
 frontend/
   src/
     app/         pages: (auth)/ login, signup, forgot/reset password, verify email;
-                 (protected)/ account, accounts, analytics, calendar, posts (list, new, [id], [id]/edit), settings/brand-voice; auth/callback
+                 (protected)/ account, accounts, analytics, calendar, posts (list, new, [id], [id]/edit), settings/brand-voice, settings/workspace; auth/callback, invite/[token]
     components/  ui/ primitives, ai/ composer AI panel and brand voice, analytics/ page, charts, heatmap, auth/ forms and guards, accounts/, calendar/, posts/, workspace/
     lib/         API client, session, workspaces, posts + uploads, AI, analytics, dates, Instagram rules, form schemas
 backend/
@@ -123,7 +123,7 @@ Requests reach Express from the Next.js server, so set `TRUST_PROXY` in `backend
 
 ## Workspaces and connected accounts
 
-Everything belongs to a **workspace**, not a user. Each sign-up gets a personal workspace with the user as `OWNER`. Roles are `OWNER`, `ADMIN`, `EDITOR` and `VIEWER`; connecting or disconnecting accounts needs `ADMIN` or above.
+Everything belongs to a **workspace**, not a user. Each sign-up gets a personal workspace with the user as `OWNER`; users can create more (e.g. one per client), join others by invite, and switch between them in the header. Roles are `OWNER`, `ADMIN`, `EDITOR` and `VIEWER`; connecting or disconnecting accounts needs `ADMIN` or above.
 
 | Endpoint | Auth | Purpose |
 | --- | --- | --- |
@@ -137,6 +137,33 @@ Everything belongs to a **workspace**, not a user. Each sign-up gets a personal 
 | `POST /api/v1/integrations/instagram/data-deletion` | Meta `signed_request` | User asked Meta to delete their data |
 
 **Tokens** are encrypted with AES-256-GCM and never sent to the browser. **The worker** (`npm run worker`) refreshes Instagram tokens every hour once they are 24 hours old and expire within 10 days; an account whose token can't be refreshed is marked `NEEDS_REAUTH` and shown as "Reconnect needed". Running several workers is safe: a Postgres advisory lock lets only one do each run.
+
+### Team: roles and invites
+
+| Action | Viewer | Editor | Admin | Owner |
+| --- | :-: | :-: | :-: | :-: |
+| See posts, calendar, analytics, accounts, members | ✅ | ✅ | ✅ | ✅ |
+| Create, edit, schedule posts; upload media; use AI | | ✅ | ✅ | ✅ |
+| Connect/disconnect accounts; brand voice; rename workspace | | | ✅ | ✅ |
+| Invite (as Viewer, Editor or Admin); resend or revoke invites | | | ✅ | ✅ |
+| Change roles or remove members | | | Editors and Viewers | Everyone |
+| Transfer ownership, delete workspace (name + password) | | | | ✅ |
+
+A workspace always has exactly one owner; ownership only changes through a transfer (the old owner becomes an admin). Nobody changes their own role, and admins can't change or remove other admins. Membership changes lock the workspace row, so concurrent changes can't produce two owners. Members see each other's names; only owners and admins see email addresses. The interface hides what a role can't do; the API enforces it.
+
+**Invites** (`/settings/workspace`): an admin enters an email and role; the invitee gets a link `/invite/<token>` (admins can also copy it). The token is stored hashed, works once, and expires after 7 days. Only someone signed in with **the same, verified email** can accept; people without an account sign up from the invite page and come back to it. Inviting the same email again refreshes the pending invite (new link; the old one stops working). Limits: 20 invites per workspace per hour, one resend per invite per minute.
+
+**Removing a member:** access ends immediately (membership is checked on every request). Their posts stay. Accounts they connected use tokens issued to *their* login, so by default those are disconnected too (their scheduled posts on those accounts are cancelled); account cards show "Connected by …". Warnings about scheduled posts go to the author while they're a member, otherwise to the owner and admins.
+
+**Deleting a workspace** deletes its posts, media records, connected accounts and team; it's refused while posts are publishing, and you can't delete your only workspace.
+
+| Endpoint | Role |
+| --- | --- |
+| `POST /workspaces` · `PATCH /workspaces/:id` `{name}` · `DELETE /workspaces/:id` `{confirmName, password}` | signed in · ADMIN+ · OWNER |
+| `GET …/members` · `PATCH …/members/:userId` `{role}` · `DELETE …/members/:userId` `{disconnectAccounts}` | VIEWER+ · ADMIN+ · ADMIN+ |
+| `POST …/members/me/leave` · `POST …/transfer-ownership` `{userId, confirmName, password}` | member · OWNER |
+| `GET/POST …/invites` · `POST …/invites/:id/resend` · `DELETE …/invites/:id` | ADMIN+ |
+| `GET /invites/:token` (preview, masked email) · `POST /invites/:token/accept` | public · signed in |
 
 **Connection rules and safeguards**
 
@@ -279,8 +306,8 @@ Post responses include each target's `metrics`.
 ## Tests
 
 ```bash
-cd backend && npm test    # API integration tests (auth, workspaces, Instagram and Facebook connect and publishing, connection safeguards, scheduling, AI, analytics; fake Instagram, Facebook, Cloudinary and Claude APIs, so nothing is billed)
-cd frontend && npm test   # API client, session, dates, Instagram rules, platform rules, hashtag merge, rewrite diff, analytics maths, time zones and CSV unit tests
+cd backend && npm test    # API integration tests (auth, workspaces, team and invites, Instagram and Facebook connect and publishing, connection safeguards, scheduling, AI, analytics; fake Instagram, Facebook, Cloudinary and Claude APIs, so nothing is billed)
+cd frontend && npm test   # API client, session, dates, Instagram rules, platform rules, team permissions, hashtag merge, rewrite diff, analytics maths, time zones and CSV unit tests
 ```
 
 Backend tests run against a separate `social_test` database, derived from `DATABASE_URL` in `.env` (or set `TEST_DATABASE_URL`). Migrations are applied automatically, and tables are emptied before each test.
