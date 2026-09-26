@@ -334,9 +334,14 @@ enum PostStatus {
 }
 
 enum PostFormat {
+  /// Text only (Facebook).
+  TEXT
   IMAGE
+  /// Several photos (and on Instagram, videos): an Instagram carousel or a Facebook multi-photo post.
   CAROUSEL
   REEL
+  /// A regular (non-Reel) video post (Facebook).
+  VIDEO
 
   @@map("post_format")
 }

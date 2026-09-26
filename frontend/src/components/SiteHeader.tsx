@@ -8,11 +8,12 @@ export function SiteHeader() {
 
   return (
     <header className="border-b border-neutral-200 dark:border-neutral-800">
-      <nav className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
+      <nav className="mx-auto flex min-h-14 max-w-5xl flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2">
         <Link href="/" className="font-semibold">
           AI Social
         </Link>
-        <div className="flex items-center gap-3 overflow-x-auto text-sm sm:gap-4">
+        {/* Wraps onto a second line on narrow screens rather than scrolling sideways. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm sm:gap-x-4">
           {status === "authenticated" ? (
             <>
               <Link href="/" className="hover:underline">

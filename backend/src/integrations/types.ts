@@ -26,6 +26,12 @@ export interface ConnectedProfile {
   avatarUrl?: string;
 }
 
+/** One account a user authorized, with its own tokens. A single login can grant several (e.g. Facebook Pages). */
+export interface ConnectedAccountGrant {
+  profile: ConnectedProfile;
+  tokens: TokenSet;
+}
+
 export interface TokenSet {
   accessToken: string;
   refreshToken?: string;
@@ -43,6 +49,9 @@ export interface PublishMedia {
   height: number;
   durationSec?: number | null;
 }
+
+/** What choosing a format looks at: the media type, and for videos their shape and length. */
+export type FormatMedia = Pick<PublishMedia, "type" | "width" | "height" | "durationSec">;
 
 export interface PublishRequest {
   format: PostFormat;
@@ -125,15 +134,17 @@ export interface PlatformAdapter {
   /** False when the platform's app credentials aren't configured on this server. */
   isConfigured(): boolean;
   getAuthorizationUrl(state: string): string;
-  /** Exchanges the callback code for the longest-lived token the platform offers. */
-  exchangeCode(code: string): Promise<TokenSet>;
-  fetchProfile(accessToken: string): Promise<ConnectedProfile>;
+  /**
+   * Finishes the OAuth flow: exchanges the callback code for the longest-lived tokens the platform
+   * offers and returns every account the user granted (one for Instagram; each chosen Page for Facebook).
+   */
+  connect(code: string): Promise<ConnectedAccountGrant[]>;
   refreshToken(token: TokenSet): Promise<TokenSet>;
   /** Earliest moment a token may be refreshed, if the platform restricts it. */
   refreshableAfter?(lastRefreshedAt: Date): Date;
 
   /** The post format this platform will use for these media, or null if it can't post them. */
-  chooseFormat(media: Pick<PublishMedia, "type">[]): PostFormat | null;
+  chooseFormat(media: FormatMedia[]): PostFormat | null;
   /** Problems that would make the platform reject the post; empty when it's fine. */
   validatePost(request: PublishRequest): string[];
   /**

@@ -10,7 +10,8 @@ import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { engagementRate, formatCount, formatPercent } from "@/lib/analytics";
 import { ApiError } from "@/lib/api";
 import { formatDateTime, formatRelative, localTimeZone } from "@/lib/dates";
-import { formatLabel } from "@/lib/instagramRules";
+import { formatLabel, platformName } from "@/lib/platforms";
+import { PlatformIcon } from "@/components/PlatformIcon";
 import { cancelPost, deletePost, getPost, isInProgress, retryTarget, riskMessage, updatePost, type Post, type PostTarget } from "@/lib/posts";
 import { PostStatusBadge } from "./PostStatusBadge";
 
@@ -199,7 +200,7 @@ export function PostDetail({ postId }: { postId: string }) {
 function TargetMetricsView({ target: t }: { target: PostTarget }) {
   const m = t.metrics;
   if (!m || m.status === "PENDING") return <p className="mt-2 text-xs text-neutral-500">Numbers appear about an hour after publishing.</p>;
-  if (m.status === "UNAVAILABLE") return <p className="mt-2 text-xs text-neutral-500">Numbers aren&apos;t available: the post may have been removed from Instagram.</p>;
+  if (m.status === "UNAVAILABLE") return <p className="mt-2 text-xs text-neutral-500">Numbers aren&apos;t available: the post may have been removed from {platformName(t.account.platform)}.</p>;
   const rate = engagementRate(m.totalInteractions, m.reach);
   const items: [string, string][] = [
     ["Views", formatCount(m.views)],
@@ -221,7 +222,7 @@ function TargetMetricsView({ target: t }: { target: PostTarget }) {
           </div>
         ))}
       </dl>
-      {m.fetchedAt ? <p className="mt-1 text-xs text-neutral-500">Updated {new Date(m.fetchedAt).toLocaleString()} · Instagram can be up to 48 h behind</p> : null}
+      {m.fetchedAt ? <p className="mt-1 text-xs text-neutral-500">Updated {new Date(m.fetchedAt).toLocaleString()} · {platformName(t.account.platform)} can be up to 48 h behind</p> : null}
     </div>
   );
 }
@@ -231,8 +232,13 @@ function TargetRow({ target: t, retrying, onRetry }: { target: PostTarget; retry
     <li className="rounded-2xl border border-neutral-200 p-4 dark:border-neutral-800">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="font-medium">@{t.account.username}</p>
-          <p className="text-sm text-neutral-500">Instagram · {formatLabel[t.format]}</p>
+          <p className="flex items-center gap-2 font-medium">
+            <PlatformIcon platform={t.account.platform} />
+            {t.account.platform === "FACEBOOK" ? (t.account.name ?? t.account.username) : `@${t.account.username}`}
+          </p>
+          <p className="text-sm text-neutral-500">
+            {platformName(t.account.platform)} · {formatLabel(t.format, t.account.platform)}
+          </p>
         </div>
         <PostStatusBadge status={t.status} />
       </div>
@@ -240,10 +246,10 @@ function TargetRow({ target: t, retrying, onRetry }: { target: PostTarget; retry
         <p className="mt-3 text-sm">
           {t.permalink ? (
             <a href={t.permalink} target="_blank" rel="noopener noreferrer" className="font-medium underline">
-              View on Instagram ↗
+              View on {platformName(t.account.platform)} ↗
             </a>
           ) : (
-            <span className="text-neutral-500">Published. Instagram didn&apos;t return a link.</span>
+            <span className="text-neutral-500">Published. {platformName(t.account.platform)} didn&apos;t return a link.</span>
           )}
         </p>
       ) : null}
@@ -255,7 +261,7 @@ function TargetRow({ target: t, retrying, onRetry }: { target: PostTarget; retry
         </p>
       ) : null}
       {t.status === "WAITING_FOR_MEDIA" ? (
-        <p className="mt-3 text-sm text-neutral-500">Instagram is processing the video. This can take a few minutes.</p>
+        <p className="mt-3 text-sm text-neutral-500">{platformName(t.account.platform)} is processing the video. This can take a few minutes.</p>
       ) : null}
       {t.status === "FAILED" ? (
         <div className="mt-3 flex flex-col gap-3">

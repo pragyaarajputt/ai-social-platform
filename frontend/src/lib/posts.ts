@@ -1,4 +1,5 @@
 import { api, ApiError } from "./api";
+import type { PostFormat } from "./platforms";
 import type { SocialAccount } from "./workspaces";
 
 export interface MediaItem {
@@ -22,7 +23,7 @@ export type TargetRisk = "ACCOUNT_NEEDS_RECONNECT" | "ACCESS_EXPIRES_BEFORE_POST
 
 export interface PostTarget {
   id: string;
-  format: "IMAGE" | "CAROUSEL" | "REEL";
+  format: PostFormat;
   status: TargetStatus;
   caption: string | null;
   scheduledAt: string | null;

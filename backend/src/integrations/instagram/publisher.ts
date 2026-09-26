@@ -1,5 +1,5 @@
 import type { PostFormat } from "../../generated/prisma/enums.js";
-import type { PublishContext, PublishMedia, PublishRequest, PublishResult } from "../types.js";
+import type { FormatMedia, PublishContext, PublishRequest, PublishResult } from "../types.js";
 import { PlatformApiError } from "../types.js";
 import { instagramCapabilities as caps } from "./capabilities.js";
 import * as ig from "./client.js";
@@ -19,7 +19,7 @@ interface InstagramPublishState {
   mediaId?: string;
 }
 
-export function chooseFormat(media: Pick<PublishMedia, "type">[]): PostFormat | null {
+export function chooseFormat(media: FormatMedia[]): PostFormat | null {
   if (media.length === 0) return null; // Instagram has no text-only posts
   if (media.length > 1) return "CAROUSEL";
   return media[0]!.type === "VIDEO" ? "REEL" : "IMAGE";

@@ -24,7 +24,6 @@ export function instagramFormat(media: Pick<MediaItem, "type">[]): InstagramForm
   return media[0]!.type === "VIDEO" ? "REEL" : "IMAGE";
 }
 
-export const formatLabel: Record<InstagramFormat, string> = { IMAGE: "Single image", CAROUSEL: "Carousel", REEL: "Reel" };
 
 export function countHashtags(text: string) {
   return (text.match(/(^|\s)#[\p{L}\p{N}_]+/gu) ?? []).length;

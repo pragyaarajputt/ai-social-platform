@@ -43,6 +43,14 @@ const schema = z.object({
   INSTAGRAM_REDIRECT_URI: optional,
   INSTAGRAM_GRAPH_VERSION: z.string().regex(/^v\d+\.\d+$/).default("v26.0"),
 
+  // Facebook Pages (Facebook Login for Business). Connecting Facebook is off unless the first three are set.
+  FACEBOOK_APP_ID: optional,
+  FACEBOOK_APP_SECRET: optional,
+  FACEBOOK_REDIRECT_URI: optional,
+  /** Login configuration from the App Dashboard (Facebook Login for Business). Without it, scopes are requested directly. */
+  FACEBOOK_CONFIG_ID: optional,
+  FACEBOOK_GRAPH_VERSION: z.string().regex(/^v\d+\.\d+$/).default("v26.0"),
+
   // Cloudinary media storage. Uploading media is off unless all three are set.
   CLOUDINARY_CLOUD_NAME: optional,
   CLOUDINARY_API_KEY: optional,
@@ -105,6 +113,16 @@ export const env = {
           appSecret: e.INSTAGRAM_APP_SECRET,
           redirectUri: e.INSTAGRAM_REDIRECT_URI,
           graphVersion: e.INSTAGRAM_GRAPH_VERSION,
+        }
+      : undefined,
+  facebook:
+    e.FACEBOOK_APP_ID && e.FACEBOOK_APP_SECRET && e.FACEBOOK_REDIRECT_URI
+      ? {
+          appId: e.FACEBOOK_APP_ID,
+          appSecret: e.FACEBOOK_APP_SECRET,
+          redirectUri: e.FACEBOOK_REDIRECT_URI,
+          configId: e.FACEBOOK_CONFIG_ID,
+          graphVersion: e.FACEBOOK_GRAPH_VERSION,
         }
       : undefined,
   cloudinary:

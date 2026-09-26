@@ -1,3 +1,4 @@
+import { firstRecord, metaRequest, optionalString } from "../meta.js";
 import { PlatformApiError } from "../types.js";
 
 // Instagram API with Instagram Login (Business Login for Instagram). Reference:
@@ -182,53 +183,13 @@ export async function listRecentMedia(
 
 // ─── HTTP + errors ──────────────────────────────────────────────────────────
 
-async function request(url: string, init?: RequestInit): Promise<unknown> {
-  let res: Response;
-  try {
-    res = await fetch(url, { ...init, signal: AbortSignal.timeout(15_000) });
-  } catch {
-    throw new PlatformApiError("INSTAGRAM", "UNAVAILABLE", "Couldn't reach Instagram");
-  }
-  const body: unknown = await res.json().catch(() => null);
-  if (!res.ok) throw toPlatformError(res.status, body);
-  return body;
-}
-
-/**
- * Instagram returns errors either as Graph API errors ({ error: { code, message, ... } }) or, from
- * the OAuth endpoint, as { error_type, code, error_message }.
- */
-function toPlatformError(status: number, body: unknown): PlatformApiError {
-  const b = (body ?? {}) as Record<string, unknown>;
-  const graph = (b.error ?? {}) as Record<string, unknown>;
-  const code = Number(graph.code ?? b.code);
-  const message = String(graph.message ?? b.error_message ?? `Instagram returned HTTP ${status}`);
-  const details = { status, code, type: graph.type ?? b.error_type, subcode: graph.error_subcode, trace: graph.fbtrace_id };
-
-  if (code === 190 || status === 401) return new PlatformApiError("INSTAGRAM", "INVALID_TOKEN", message, details);
-  if ([4, 17, 32, 613].includes(code) || status === 429) return new PlatformApiError("INSTAGRAM", "RATE_LIMITED", message, details);
-  if (code === 10 || (code >= 200 && code < 300) || status === 403) {
-    return new PlatformApiError("INSTAGRAM", "PERMISSION_DENIED", message, details);
-  }
-  if (status >= 500) return new PlatformApiError("INSTAGRAM", "UNAVAILABLE", message, details);
-  return new PlatformApiError("INSTAGRAM", "BAD_REQUEST", message, details);
-}
+const request = (url: string, init?: RequestInit) => metaRequest("INSTAGRAM", url, init);
 
 function parseLongLived(body: unknown): LongLivedToken {
   const data = firstRecord(body);
   if (typeof data.access_token !== "string") throw unexpected("no access token in response");
   const expiresIn = Number(data.expires_in);
   return { accessToken: data.access_token, expiresInSeconds: Number.isFinite(expiresIn) ? expiresIn : 60 * 86_400 };
-}
-
-function firstRecord(body: unknown): Record<string, unknown> {
-  const b = (body ?? {}) as Record<string, unknown>;
-  if (Array.isArray(b.data) && b.data[0] && typeof b.data[0] === "object") return b.data[0] as Record<string, unknown>;
-  return b;
-}
-
-function optionalString(v: unknown): string | undefined {
-  return typeof v === "string" && v ? v : undefined;
 }
 
 function unexpected(what: string): PlatformApiError {

@@ -1,8 +1,8 @@
 # AI Social: social media management with AI
 
-Connect your social accounts (Instagram first; LinkedIn, Facebook, Threads, X, YouTube and TikTok planned), write a post once with AI help, and publish or schedule it to every platform from one dashboard.
+Connect your social accounts (Instagram and Facebook Pages; LinkedIn, Threads, X, YouTube and TikTok planned), write a post once with AI help, and publish or schedule it to every platform from one dashboard.
 
-**Status:** Phase 8. Connect Instagram, upload photos and videos, publish to one or more Instagram accounts (single image, carousel, Reel) **now or on a schedule**, plan posts on a calendar, and write with **AI**: captions in five tones (from an idea and/or the photos), hashtag suggestions, rewrites, and a workspace brand voice. **Analytics**: account reach, views, interactions and followers over time, per-post numbers, top posts (CSV export), and when followers are online.
+**Status:** Phase 9. Connect Instagram accounts and **Facebook Pages**, write once and publish to both, upload photos and videos, publish to one or more Instagram accounts (single image, carousel, Reel) **now or on a schedule**, plan posts on a calendar, and write with **AI**: captions in five tones (from an idea and/or the photos), hashtag suggestions, rewrites, and a workspace brand voice. **Analytics**: account reach, views, interactions and followers over time, per-post numbers, top posts (CSV export), and when followers are online.
 
 > `docs/PRD.md` describes the original social-network idea and is out of date. The product is now a social media management tool.
 
@@ -12,7 +12,7 @@ Connect your social accounts (Instagram first; LinkedIn, Facebook, Threads, X, Y
 - **Backend:** Node.js + Express 5 (TypeScript)
 - **Database:** PostgreSQL 18 + Prisma ORM 7 (pg driver adapter)
 - **Auth:** argon2id passwords, JWT access tokens (jose), rotating refresh tokens in an httpOnly cookie
-- **Integrations:** Instagram API with Instagram Login (Graph API v26.0), plain `fetch`, tokens encrypted with AES-256-GCM
+- **Integrations:** Instagram API with Instagram Login and Facebook Pages API with Facebook Login for Business (Graph API v26.0), plain `fetch`, tokens encrypted with AES-256-GCM
 - **Media:** Cloudinary (direct browser uploads; REST API with plain `fetch`)
 - **Jobs:** a Postgres-backed queue (`post_targets` rows claimed with `FOR UPDATE SKIP LOCKED`), no Redis
 - **AI:** Claude (Claude Opus 5 by default) through the official `@anthropic-ai/sdk`, with structured outputs
@@ -35,7 +35,7 @@ backend/
     ai/          Claude client, versioned prompts, pricing
     config/      environment, app config, Prisma client
     generated/   generated Prisma client (gitignored)
-    integrations/ one adapter per social platform (instagram/), shared interface in types.ts
+    integrations/ one adapter per social platform (instagram/, facebook/), shared interface in types.ts, Meta HTTP/errors in meta.ts
     jobs/        publish queue (claim, publish, retry) and analytics collection
     storage/     Cloudinary client
     controllers/ request handlers
@@ -148,6 +148,26 @@ Everything belongs to a **workspace**, not a user. Each sign-up gets a personal 
 
 Serving accounts you don't own needs Meta **app review** (advanced access).
 
+## Facebook Pages
+
+Connect with **Connect Facebook Pages** on the Accounts page. Facebook's window lets you choose Pages; every chosen Page where you can create content becomes its own account. Page tokens (from a long-lived user token) don't expire; they stop working only if the app is removed, you lose your Page role, or you change your password, and then the Page shows "Reconnect".
+
+**Setup** (`backend/.env`): `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET` (App settings → Basic of your Meta app; not the Instagram app ID), `FACEBOOK_REDIRECT_URI` (`https://<host>/api/v1/integrations/facebook/callback`, HTTPS; also added under Facebook Login for Business → Settings). Optional `FACEBOOK_CONFIG_ID`: a login configuration (User access token) with `pages_show_list`, `pages_manage_posts`, `pages_read_engagement`, `read_insights`, `business_management`; without it these permissions are requested directly. People with a role on the app can use them right away; everyone else needs App Review. Deauthorize and data-deletion callbacks: `/api/v1/integrations/facebook/deauthorize` and `/data-deletion`.
+
+| Post | Facebook | Instagram |
+| --- | --- | --- |
+| Text only | Text post | Not possible |
+| 1 photo | Photo post | Single image |
+| Several photos | Multi-photo post (up to 10) | Carousel |
+| 1 video | **Reel** when vertical (≤ 0.6 width/height), 3–90 s and ≥ 540 px wide; otherwise a video post | Reel |
+| Photos and videos mixed | Not possible | Carousel |
+
+Each selected account is checked against its own platform's rules (Facebook text up to 63,206 characters, Instagram 2,200); per-account captions let the Facebook version be longer. Media is sent by URL (`file_url`), as for Instagram.
+
+**Never posting twice:** each step's result is saved as it happens. Just before the call that creates the post, a marker is saved. If a retry finds the marker without a result, the worker looks for the post among the Page's recent posts (same text, created since the attempt started); if it isn't there, the post fails with "Couldn't confirm whether Facebook published this post" instead of risking a duplicate, and the user's Retry posts it. A clear error from Facebook clears the marker, so normal retries stay automatic. Reels finish only if Facebook hasn't started publishing them.
+
+**Analytics:** Page insights metrics were cut back on 15 June 2026. Used: `post_media_view` / `post_total_media_view_unique` (views, reach), reactions, comments and shares per post; `page_media_view` / `page_total_media_view_unique` per day; `followers_count`. Not available for Pages: saves, follows/unfollows, and when followers are online.
+
 ## Publishing
 
 1. **Upload:** the browser asks the API for a signed upload (`POST /workspaces/:id/media/upload-signature`), sends the file **straight to Cloudinary**, then registers it (`POST /workspaces/:id/media`). The API reads size, dimensions and duration from Cloudinary, not from the browser.
@@ -243,8 +263,8 @@ Post responses include each target's `metrics`.
 ## Tests
 
 ```bash
-cd backend && npm test    # API integration tests (auth, workspaces, Instagram connect, publishing, scheduling, AI, analytics; fake Instagram, Cloudinary and Claude APIs, so nothing is billed)
-cd frontend && npm test   # API client, session, dates, Instagram rules, hashtag merge, rewrite diff, analytics maths, time zones and CSV unit tests
+cd backend && npm test    # API integration tests (auth, workspaces, Instagram and Facebook connect and publishing, scheduling, AI, analytics; fake Instagram, Facebook, Cloudinary and Claude APIs, so nothing is billed)
+cd frontend && npm test   # API client, session, dates, Instagram rules, platform rules, hashtag merge, rewrite diff, analytics maths, time zones and CSV unit tests
 ```
 
 Backend tests run against a separate `social_test` database, derived from `DATABASE_URL` in `.env` (or set `TEST_DATABASE_URL`). Migrations are applied automatically, and tables are emptied before each test.

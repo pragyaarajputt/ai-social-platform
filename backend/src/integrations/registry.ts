@@ -1,10 +1,12 @@
 import type { SocialPlatform } from "../generated/prisma/enums.js";
 import { AppError } from "../utils/AppError.js";
+import { facebookAdapter } from "./facebook/adapter.js";
 import { instagramAdapter } from "./instagram/adapter.js";
 import type { PlatformAdapter } from "./types.js";
 
 const adapters: Partial<Record<SocialPlatform, PlatformAdapter>> = {
   INSTAGRAM: instagramAdapter,
+  FACEBOOK: facebookAdapter,
 };
 
 /** URL segment → platform, e.g. "instagram" → "INSTAGRAM". */

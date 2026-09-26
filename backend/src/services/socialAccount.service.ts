@@ -14,6 +14,7 @@ export type ConnectFailure =
   | "cancelled" // the user said no on the platform's consent screen
   | "invalid_state" // unknown, used or expired state: not a flow we started, or it took too long
   | "unsupported_account" // e.g. a personal Instagram account
+  | "no_accounts" // e.g. no Facebook Page chosen, or none the user can post to
   | "platform_error"; // the platform rejected the code or was unavailable
 
 export class ConnectError extends Error {
@@ -95,67 +96,75 @@ export async function completeConnect(params: {
   if (params.error) throw new ConnectError("cancelled", "The user declined access");
   if (!params.code) throw new ConnectError("platform_error", "No authorization code");
 
-  let tokens, profile;
+  let grants;
   try {
-    tokens = await adapter.exchangeCode(params.code);
-    profile = await adapter.fetchProfile(tokens.accessToken);
+    grants = await adapter.connect(params.code);
   } catch (err) {
     if (err instanceof PlatformApiError) throw new ConnectError("platform_error", err.message);
     throw err;
   }
 
-  if (!adapter.capabilities.supportedAccountTypes.includes(profile.accountType)) {
-    throw new ConnectError("unsupported_account", `Account type ${profile.accountType} can't be connected`);
+  // Only account types the platform lets us publish to (e.g. not personal Instagram accounts).
+  const supported = grants.filter((g) => adapter.capabilities.supportedAccountTypes.includes(g.profile.accountType));
+  if (supported.length === 0) {
+    if (grants.length === 0) throw new ConnectError("no_accounts", "The user granted no accounts we can publish to");
+    throw new ConnectError("unsupported_account", `Account type ${grants[0]!.profile.accountType} can't be connected`);
   }
 
   const { workspaceId, userId } = stored;
-  const tokenData = {
-    accessTokenEnc: encryptToken(tokens.accessToken),
-    refreshTokenEnc: tokens.refreshToken ? encryptToken(tokens.refreshToken) : null,
-    expiresAt: tokens.expiresAt ?? null,
-    scopes: tokens.scopes,
-    lastRefreshedAt: new Date(),
-    failureCount: 0,
-    lastError: null,
-  };
-  const accountData = {
-    appScopedId: profile.appScopedId ?? null,
-    accountType: profile.accountType,
-    username: profile.username ?? null,
-    name: profile.name ?? null,
-    avatarUrl: profile.avatarUrl ?? null,
-    status: "ACTIVE" as const,
-    // Reconnecting with the insights permission turns analytics (back) on.
-    insightsAllowed: adapter.insights ? tokens.scopes.includes(adapter.insights.requiredScope) : false,
-    connectedById: userId,
-    lastCheckedAt: new Date(),
-  };
+  const now = new Date();
 
+  // All granted accounts are saved together, so a login never half-connects.
   return prisma.$transaction(async (tx) => {
-    const key = { workspaceId, platform: params.platform, externalId: profile.externalId };
-    const existing = await tx.socialAccount.findUnique({
-      where: { workspaceId_platform_externalId: key },
-      select: { id: true },
-    });
-    // Reconnecting an account updates it in place instead of creating a duplicate.
-    const account = await tx.socialAccount.upsert({
-      where: { workspaceId_platform_externalId: key },
-      create: { ...key, ...accountData, token: { create: tokenData } },
-      update: { ...accountData, token: { upsert: { create: tokenData, update: tokenData } } },
-      select: publicAccountSelect,
-    });
-    await audit(
-      {
-        action: existing ? "social_account.reconnected" : "social_account.connected",
-        workspaceId,
-        actorId: userId,
-        targetType: "social_account",
-        targetId: account.id,
-        metadata: { platform: params.platform, username: account.username ?? "" },
-      },
-      tx,
-    );
-    return { workspaceId, account };
+    const accounts = [];
+    for (const { profile, tokens } of supported) {
+      const tokenData = {
+        accessTokenEnc: encryptToken(tokens.accessToken),
+        refreshTokenEnc: tokens.refreshToken ? encryptToken(tokens.refreshToken) : null,
+        expiresAt: tokens.expiresAt ?? null,
+        scopes: tokens.scopes,
+        lastRefreshedAt: now,
+        failureCount: 0,
+        lastError: null,
+      };
+      const accountData = {
+        appScopedId: profile.appScopedId ?? null,
+        accountType: profile.accountType,
+        username: profile.username ?? null,
+        name: profile.name ?? null,
+        avatarUrl: profile.avatarUrl ?? null,
+        status: "ACTIVE" as const,
+        // Reconnecting with the insights permission turns analytics (back) on.
+        insightsAllowed: adapter.insights ? tokens.scopes.includes(adapter.insights.requiredScope) : false,
+        connectedById: userId,
+        lastCheckedAt: now,
+      };
+      const key = { workspaceId, platform: params.platform, externalId: profile.externalId };
+      const existing = await tx.socialAccount.findUnique({
+        where: { workspaceId_platform_externalId: key },
+        select: { id: true },
+      });
+      // Reconnecting an account updates it in place instead of creating a duplicate.
+      const account = await tx.socialAccount.upsert({
+        where: { workspaceId_platform_externalId: key },
+        create: { ...key, ...accountData, token: { create: tokenData } },
+        update: { ...accountData, token: { upsert: { create: tokenData, update: tokenData } } },
+        select: publicAccountSelect,
+      });
+      await audit(
+        {
+          action: existing ? "social_account.reconnected" : "social_account.connected",
+          workspaceId,
+          actorId: userId,
+          targetType: "social_account",
+          targetId: account.id,
+          metadata: { platform: params.platform, username: account.username ?? "" },
+        },
+        tx,
+      );
+      accounts.push(account);
+    }
+    return { workspaceId, accounts };
   });
 }
 

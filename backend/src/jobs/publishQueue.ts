@@ -157,7 +157,14 @@ export async function processTarget(targetId: string, now = new Date()): Promise
           tx,
         );
       });
-      return fail(target.id, target.post.id, target.attempts, startedAt, "TOKEN_INVALID", "Instagram rejected this account's access. Reconnect it, then retry.");
+      return fail(
+        target.id,
+        target.post.id,
+        target.attempts,
+        startedAt,
+        "TOKEN_INVALID",
+        `${adapter.capabilities.displayName} rejected this account's access. Reconnect it, then retry.`,
+      );
     }
 
     // Unknown errors (bugs, database blips) are retried like temporary platform errors.

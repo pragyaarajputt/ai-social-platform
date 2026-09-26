@@ -1,4 +1,5 @@
 import { api } from "./api";
+import type { PostFormat } from "./platforms";
 import type { SocialAccount } from "./workspaces";
 
 // Analytics: read from our own server (which collects from Instagram hourly), never from Instagram
@@ -22,7 +23,7 @@ export interface DayTotals {
   engagementRate: number | null;
 }
 
-export type AnalyticsAccount = Pick<SocialAccount, "id" | "platform" | "username" | "avatarUrl" | "status"> & {
+export type AnalyticsAccount = Pick<SocialAccount, "id" | "platform" | "username" | "name" | "avatarUrl" | "status"> & {
   insightsAllowed: boolean;
   audienceFetchedAt: string | null;
 };
@@ -53,7 +54,7 @@ export interface TopPost {
   postId: string;
   targetId: string;
   caption: string;
-  format: "IMAGE" | "CAROUSEL" | "REEL";
+  format: PostFormat;
   permalink: string | null;
   publishedAt: string | null;
   thumbnailUrl: string | null;
@@ -71,7 +72,7 @@ export interface TopPost {
 }
 
 export interface BestTimes {
-  account: { id: string; username: string | null; insightsAllowed: boolean } | null;
+  account: { id: string; platform: SocialAccount["platform"]; username: string | null; insightsAllowed: boolean } | null;
   /** Average followers online per UTC weekday (0 = Sunday) × UTC hour. */
   grid: number[][] | null;
   fetchedAt: string | null;

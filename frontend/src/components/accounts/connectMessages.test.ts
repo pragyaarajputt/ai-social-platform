@@ -12,6 +12,15 @@ describe("connectResultMessage()", () => {
     expect(msg("connected=instagram")).toEqual({ tone: "success", text: "Instagram account connected." });
   });
 
+  it("counts connected Facebook Pages", () => {
+    expect(msg("connected=facebook&count=1")?.text).toBe("Facebook Page connected.");
+    expect(msg("connected=facebook&count=3")?.text).toBe("3 Facebook Pages connected.");
+  });
+
+  it("explains what to do when no Page could be connected", () => {
+    expect(msg("error=no_accounts&platform=facebook")?.text).toContain("choose at least one Page");
+  });
+
   it("explains how to fix a personal Instagram account", () => {
     const m = msg("error=unsupported_account&platform=instagram");
     expect(m?.tone).toBe("error");

@@ -4,7 +4,11 @@ export function connectResultMessage(
   platformName: (slug: string) => string,
 ): { tone: "success" | "error"; text: string } | null {
   const connected = params.get("connected");
-  if (connected) return { tone: "success", text: `${platformName(connected)} account connected.` };
+  if (connected) {
+    const count = Number(params.get("count") ?? 1);
+    if (connected === "facebook") return { tone: "success", text: count === 1 ? "Facebook Page connected." : `${count} Facebook Pages connected.` };
+    return { tone: "success", text: `${platformName(connected)} account connected.` };
+  }
 
   const error = params.get("error");
   if (!error) return null;
@@ -22,10 +26,15 @@ export function connectResultMessage(
             ? "Only Instagram Business or Creator accounts can be connected. In the Instagram app, go to Settings → Account type and tools → Switch to professional account, then try again."
             : `This type of ${name} account can't be connected.`,
       };
+    case "no_accounts":
+      return {
+        tone: "error",
+        text: "No Facebook Page was connected. In Facebook's window, choose at least one Page where you can create posts (you need a Page role that allows it).",
+      };
     default:
       return { tone: "error", text: `${name} returned an error. Please try again in a moment.` };
   }
 }
 
 export const platformDisplayName = (slug: string) =>
-  ({ instagram: "Instagram" })[slug.toLowerCase()] ?? (slug ? slug[0]!.toUpperCase() + slug.slice(1) : "The platform");
+  ({ instagram: "Instagram", facebook: "Facebook" })[slug.toLowerCase()] ?? (slug ? slug[0]!.toUpperCase() + slug.slice(1) : "The platform");

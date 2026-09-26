@@ -100,7 +100,7 @@ async function connectInstagram(user: { token: string; workspaceId: string }) {
   const state = await startConnect(user);
   const res = await callback({ code: "good-code", state });
   expect(res.status).toBe(302);
-  expect(res.headers.location).toBe(`${env.appUrl}/accounts?connected=instagram`);
+  expect(res.headers.location).toBe(`${env.appUrl}/accounts?connected=instagram&count=1`);
   return prisma.socialAccount.findFirstOrThrow({ where: { workspaceId: user.workspaceId }, include: { token: true } });
 }
 
@@ -243,7 +243,10 @@ describe("connecting Instagram", () => {
     const raw = JSON.stringify(list.body);
     expect(raw).not.toContain("long-token");
     expect(raw).not.toContain("accessTokenEnc");
-    expect(list.body.platforms).toEqual([{ platform: "INSTAGRAM", displayName: "Instagram", configured: true }]);
+    expect(list.body.platforms).toEqual([
+      { platform: "INSTAGRAM", displayName: "Instagram", configured: true },
+      { platform: "FACEBOOK", displayName: "Facebook", configured: true },
+    ]);
 
     const log = await prisma.auditLog.findFirst({ where: { action: "social_account.connected" } });
     expect(log).toMatchObject({ workspaceId: user.workspaceId, actorId: user.userId, targetId: account.id });

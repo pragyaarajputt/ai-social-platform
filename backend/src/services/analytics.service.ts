@@ -31,7 +31,7 @@ async function workspaceAccounts(workspaceId: string) {
   return prisma.socialAccount.findMany({
     where: { workspaceId, status: { not: "DISCONNECTED" } },
     orderBy: { createdAt: "asc" },
-    select: { id: true, platform: true, username: true, avatarUrl: true, status: true, insightsAllowed: true, audienceFetchedAt: true },
+    select: { id: true, platform: true, username: true, name: true, avatarUrl: true, status: true, insightsAllowed: true, audienceFetchedAt: true },
   });
 }
 
@@ -159,7 +159,7 @@ export async function getBestTimes(workspaceId: string, accountId?: string) {
   if (!account) return { account: null, grid: null, fetchedAt: null };
   const audience = await prisma.accountAudience.findUnique({ where: { socialAccountId: account.id } });
   return {
-    account: { id: account.id, username: account.username, insightsAllowed: account.insightsAllowed },
+    account: { id: account.id, platform: account.platform, username: account.username, insightsAllowed: account.insightsAllowed },
     /** Average followers online per UTC weekday (0 = Sunday) × UTC hour. */
     grid: (audience?.onlineGrid as number[][] | null | undefined) ?? null,
     fetchedAt: audience?.fetchedAt ?? null,

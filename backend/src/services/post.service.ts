@@ -144,7 +144,7 @@ async function planPost(
       return null;
     }
     const adapter = getAdapter(account.platform);
-    const format = adapter.chooseFormat(media.map((m) => ({ type: m!.type })));
+    const format = adapter.chooseFormat(media.map((m) => m!));
     const request: PublishRequest = {
       format: format ?? "IMAGE",
       caption: t.captionOverride ?? input.caption,

@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Alert } from "@/components/ui/Alert";
+import { PlatformIcon } from "@/components/PlatformIcon";
 import { Button } from "@/components/ui/Button";
 import { PageLoading } from "@/components/auth/RequireAuth";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
@@ -130,15 +131,22 @@ export function AccountsPanel() {
                 key={p.platform}
                 className="flex flex-col gap-3 rounded-2xl border border-neutral-200 p-4 dark:border-neutral-800"
               >
-                <div>
-                  <p className="font-medium">{p.displayName}</p>
-                  <p className="text-sm text-neutral-500">
-                    {p.platform === "INSTAGRAM" ? "Business or Creator accounts" : "Coming soon"}
-                  </p>
+                <div className="flex items-start gap-3">
+                  <PlatformIcon platform={p.platform} className="mt-0.5 h-6 w-6" />
+                  <div>
+                    <p className="font-medium">{p.displayName}</p>
+                    <p className="text-sm text-neutral-500">
+                      {p.platform === "INSTAGRAM"
+                        ? "Business or Creator accounts"
+                        : p.platform === "FACEBOOK"
+                          ? "Pages you manage. Choose one or more in Facebook's window."
+                          : "Coming soon"}
+                    </p>
+                  </div>
                 </div>
                 {p.configured ? (
                   <Button loading={connecting === p.platform} disabled={connecting !== null} onClick={() => connect(p.platform)}>
-                    Connect {p.displayName}
+                    {p.platform === "FACEBOOK" ? "Connect Facebook Pages" : `Connect ${p.displayName}`}
                   </Button>
                 ) : (
                   <p className="text-sm text-neutral-500">Not set up on this server yet.</p>

@@ -10,7 +10,9 @@ import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { ApiError } from "@/lib/api";
-import { countHashtags, countMentions, formatLabel, INSTAGRAM, instagramFormat, instagramProblems } from "@/lib/instagramRules";
+import { PlatformIcon } from "@/components/PlatformIcon";
+import { countHashtags, countMentions, INSTAGRAM } from "@/lib/instagramRules";
+import { CAPTION_MAX, formatFor, formatLabel, platformName, problemsFor as platformProblems } from "@/lib/platforms";
 import { formatDateTime, formatRelative, fromDateTimeLocal, localTimeZone, toDateTimeLocal, useNow } from "@/lib/dates";
 import { createPost, updatePost, uploadMedia, type MediaItem, type Post } from "@/lib/posts";
 import { listSocialAccounts, type SocialAccount } from "@/lib/workspaces";
@@ -76,9 +78,11 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
 
   const ready = accounts.filter((a) => a.status === "ACTIVE");
   const notReady = accounts.filter((a) => a.status !== "ACTIVE");
-  const format = instagramFormat(media);
   const uploading = uploads.some((u) => !u.error);
-  const problemsFor = (accountId: string) => instagramProblems(overrides[accountId] ?? caption, media);
+  const platformOf = (accountId: string) => accounts.find((a) => a.id === accountId)?.platform ?? "INSTAGRAM";
+  const problemsFor = (accountId: string) => platformProblems(platformOf(accountId), overrides[accountId] ?? caption, media);
+  // The platforms being posted to (every connected one while nothing is selected), for counters and format.
+  const selectedPlatforms = Array.from(new Set((selected.length ? selected : ready.map((a) => a.id)).map(platformOf)));
   const scheduledFor = mode === "schedule" ? fromDateTimeLocal(when) : null;
   // Mirrors the server: only a newly chosen time has to be at least 2 minutes ahead.
   const timeChanged = !editing || when !== initialWhen || mode !== "schedule";
@@ -97,7 +101,10 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
     accounts.find((a) => a.id === id)?.username ?? initialPost?.targets.find((t) => t.account.id === id)?.account.username ?? "an account";
   const problems = Array.from(
     new Set([
-      ...selected.filter((id) => !staleSelected.includes(id)).flatMap(problemsFor),
+      // With several platforms selected, each problem says which one it's about.
+      ...selected
+        .filter((id) => !staleSelected.includes(id))
+        .flatMap((id) => problemsFor(id).map((p) => (selectedPlatforms.length > 1 ? `${platformName(platformOf(id))}: ${p}` : p))),
       ...staleSelected.map((id) => `Remove @${staleName(id)} or reconnect it first.`),
       ...(scheduleProblem ? [scheduleProblem] : []),
     ]),
@@ -159,7 +166,7 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
     return (
       <Page>
         <Alert tone="info">
-          Connect an Instagram account before creating a post.{" "}
+          Connect an Instagram account or a Facebook Page before creating a post.{" "}
           <Link href="/accounts" className="font-medium underline">
             Go to accounts
           </Link>
@@ -287,7 +294,7 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
               placeholder="Write a caption…"
               className="mt-2 w-full rounded-xl border border-neutral-300 bg-transparent p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700"
             />
-            <CaptionCounters text={caption} />
+            <CaptionCounters text={caption} platforms={selectedPlatforms} />
             <AiAssistant
               workspaceId={workspaceId}
               caption={caption}
@@ -315,8 +322,9 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
                         checked={checked}
                         onChange={() => setSelected((s) => (checked ? s.filter((x) => x !== a.id) : [...s, a.id]))}
                       />
-                      <span className="font-medium">@{a.username}</span>
-                      <span className="text-neutral-500">Instagram</span>
+                      <PlatformIcon platform={a.platform} />
+                      <span className="font-medium">{a.platform === "FACEBOOK" ? a.name ?? a.username : `@${a.username}`}</span>
+                      <span className="text-neutral-500">{platformName(a.platform)}</span>
                     </label>
                     {checked ? (
                       overrides[a.id] === undefined ? (
@@ -382,9 +390,15 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
           </section>
 
           <section className="rounded-xl bg-neutral-50 p-3 text-sm dark:bg-neutral-900">
-            <p>
-              Format: <strong>{format ? `${formatLabel[format]}${format === "CAROUSEL" ? ` (${media.length} items)` : ""}` : "—"}</strong>
-            </p>
+            {selectedPlatforms.map((p) => {
+              const f = formatFor(p, media);
+              return (
+                <p key={p}>
+                  {selectedPlatforms.length > 1 ? `${platformName(p)}: ` : "Format: "}
+                  <strong>{f ? `${formatLabel(f, p)}${f === "CAROUSEL" ? ` (${media.length} items)` : ""}` : "—"}</strong>
+                </p>
+              );
+            })}
             {problems.length > 0 && selected.length > 0 ? (
               <ul className="mt-2 list-disc pl-4 text-amber-800 dark:text-amber-300">
                 {problems.map((p) => (
@@ -456,17 +470,23 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
   );
 }
 
-function CaptionCounters({ text }: { text: string }) {
+/** Counts against the strictest selected platform; hashtag and mention limits are Instagram's. */
+function CaptionCounters({ text, platforms }: { text: string; platforms: SocialAccount["platform"][] }) {
+  const max = Math.min(...platforms.map((p) => CAPTION_MAX[p] ?? Infinity));
   const items: [string, number, number][] = [
-    ["characters", text.length, INSTAGRAM.captionMax],
-    ["hashtags", countHashtags(text), INSTAGRAM.hashtagMax],
-    ["mentions", countMentions(text), INSTAGRAM.mentionMax],
+    ["characters", text.length, Number.isFinite(max) ? max : INSTAGRAM.captionMax],
+    ...(platforms.includes("INSTAGRAM")
+      ? ([
+          ["hashtags", countHashtags(text), INSTAGRAM.hashtagMax],
+          ["mentions", countMentions(text), INSTAGRAM.mentionMax],
+        ] as [string, number, number][])
+      : []),
   ];
   return (
     <p className="mt-1 flex flex-wrap gap-x-4 text-xs text-neutral-500">
       {items.map(([label, n, max]) => (
         <span key={label} className={n > max ? "font-medium text-red-600 dark:text-red-400" : undefined}>
-          {n} / {max} {label}
+          {n.toLocaleString()} / {max.toLocaleString()} {label}
         </span>
       ))}
     </p>

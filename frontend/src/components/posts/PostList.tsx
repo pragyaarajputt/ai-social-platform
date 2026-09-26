@@ -97,7 +97,7 @@ export function PostList() {
                     {p.status === "SCHEDULED" && p.scheduledAt
                       ? `${formatDateTime(new Date(p.scheduledAt))} (${formatRelative(new Date(p.scheduledAt))})`
                       : new Date(p.createdAt).toLocaleString()}{" "}
-                    · {p.targets.map((t) => `@${t.account.username}`).join(", ")}
+                    · {p.targets.map((t) => (t.account.platform === "FACEBOOK" ? (t.account.name ?? t.account.username) : `@${t.account.username}`)).join(", ")}
                   </p>
                   {p.targets.some((t) => t.risk) ? (
                     <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">⚠ Needs attention before it goes out</p>

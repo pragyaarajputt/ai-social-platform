@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { PlatformIcon } from "@/components/PlatformIcon";
 import { Button } from "@/components/ui/Button";
+import { platformName } from "@/lib/platforms";
 import type { SocialAccount } from "@/lib/workspaces";
 
 const statusLabel: Record<SocialAccount["status"], { text: string; className: string }> = {
@@ -11,7 +13,7 @@ const statusLabel: Record<SocialAccount["status"], { text: string; className: st
   DISCONNECTED: { text: "Disconnected", className: "bg-neutral-100 text-neutral-600 dark:bg-neutral-900 dark:text-neutral-400" },
 };
 
-const accountTypeLabel: Record<string, string> = { BUSINESS: "Business", MEDIA_CREATOR: "Creator" };
+const accountTypeLabel: Record<string, string> = { BUSINESS: "Business", MEDIA_CREATOR: "Creator", PAGE: "Page" };
 
 export function AccountCard({
   account,
@@ -29,7 +31,8 @@ export function AccountCard({
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const status = statusLabel[account.status];
-  const handle = account.username ? `@${account.username}` : account.name ?? account.externalId;
+  // Facebook Pages are known by their name; Instagram accounts by their @username.
+  const handle = account.platform === "FACEBOOK" ? (account.name ?? account.username ?? account.externalId) : account.username ? `@${account.username}` : (account.name ?? account.externalId);
   const needsAttention = account.status === "NEEDS_REAUTH" || account.status === "REVOKED";
   // Connected before analytics existed, or the insights permission wasn't granted.
   const analyticsOff = account.status === "ACTIVE" && !account.insightsAllowed;
@@ -48,8 +51,10 @@ export function AccountCard({
         )}
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium">{handle}</p>
-          <p className="text-sm text-neutral-500">
-            Instagram{account.accountType ? ` · ${accountTypeLabel[account.accountType] ?? account.accountType}` : ""}
+          <p className="flex items-center gap-1.5 text-sm text-neutral-500">
+            <PlatformIcon platform={account.platform} className="h-3.5 w-3.5" />
+            {platformName(account.platform)}
+            {account.accountType ? ` · ${accountTypeLabel[account.accountType] ?? account.accountType}` : ""}
           </p>
         </div>
         <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${status.className}`}>{status.text}</span>
@@ -57,11 +62,13 @@ export function AccountCard({
 
       <p className="mt-3 text-sm text-neutral-500">
         {account.status === "ACTIVE"
-          ? `Access renews automatically${expiryNote(account.tokenExpiresAt)}.`
+          ? account.tokenExpiresAt
+            ? `Access renews automatically${expiryNote(account.tokenExpiresAt)}.`
+            : `Access doesn't expire. It stops only if the app is removed on ${platformName(account.platform)} or you lose your role.`
           : account.status === "NEEDS_REAUTH"
             ? "Access to this account expired. Reconnect to keep publishing."
             : account.status === "REVOKED"
-              ? "Access was removed from the Instagram side. Reconnect to publish again."
+              ? `Access was removed on ${platformName(account.platform)}. Reconnect to publish again.`
               : null}
       </p>
       {analyticsOff ? (

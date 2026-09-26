@@ -21,19 +21,17 @@ export const instagramAdapter: PlatformAdapter = {
 
   getAuthorizationUrl: (state) => ig.buildAuthorizationUrl(app(), state),
 
-  async exchangeCode(code): Promise<TokenSet> {
+  // Instagram Login grants exactly one account: the one the user signed in with.
+  async connect(code) {
     const short = await ig.exchangeCodeForShortLivedToken(app(), code);
     const long = await ig.exchangeForLongLivedToken(app(), short.accessToken);
-    return {
+    const tokens: TokenSet = {
       accessToken: long.accessToken,
       expiresAt: expiresAt(long.expiresInSeconds),
       scopes: short.permissions.length ? short.permissions : ig.INSTAGRAM_SCOPES,
     };
-  },
-
-  async fetchProfile(accessToken) {
-    const p = await ig.getProfile(app(), accessToken);
-    return {
+    const p = await ig.getProfile(app(), tokens.accessToken);
+    const profile = {
       externalId: p.user_id,
       appScopedId: p.id,
       // Stored upper-case: "Business" → "BUSINESS", "Media_Creator" → "MEDIA_CREATOR".
@@ -42,6 +40,7 @@ export const instagramAdapter: PlatformAdapter = {
       name: p.name,
       avatarUrl: p.profile_picture_url,
     };
+    return [{ profile, tokens }];
   },
 
   // Instagram long-lived tokens are refreshed by exchanging the token itself; there is no refresh token.

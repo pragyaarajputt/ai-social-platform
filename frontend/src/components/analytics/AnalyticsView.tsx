@@ -25,7 +25,7 @@ import {
   type TopPost,
 } from "@/lib/analytics";
 import { formatRelative, localTimeZone, useNow } from "@/lib/dates";
-import { formatLabel } from "@/lib/instagramRules";
+import { formatLabel, platformName } from "@/lib/platforms";
 import { Heatmap } from "./Heatmap";
 import { LineChart } from "./LineChart";
 
@@ -91,7 +91,7 @@ export function AnalyticsView() {
     return (
       <Page>
         <Alert tone="info">
-          Connect an Instagram account to see analytics.{" "}
+          Connect an Instagram account or a Facebook Page to see analytics.{" "}
           <Link href="/accounts" className="font-medium underline">
             Go to accounts
           </Link>
@@ -128,13 +128,13 @@ export function AnalyticsView() {
             >
               {overview.accounts.map((a) => (
                 <option key={a.id} value={a.id}>
-                  @{a.username}
+                  {a.platform === "FACEBOOK" ? `${a.name ?? a.username} (Facebook)` : `@${a.username}`}
                 </option>
               ))}
             </select>
           </label>
         ) : (
-          <p className="text-sm font-medium">@{account.username}</p>
+          <p className="text-sm font-medium">{account.platform === "FACEBOOK" ? (account.name ?? account.username) : `@${account.username}`}</p>
         )}
         <div role="group" aria-label="Date range" className="flex rounded-lg border border-neutral-300 p-0.5 text-sm dark:border-neutral-700">
           {RANGES.map((r) => (
@@ -151,7 +151,7 @@ export function AnalyticsView() {
         </div>
         <p className="text-xs text-neutral-500 sm:ml-auto">
           {overview.lastCollectedAt ? `Updated ${formatRelative(new Date(overview.lastCollectedAt), new Date(now))} · ` : ""}
-          Instagram data can be up to 48 h behind
+          {platformName(account.platform)} data can be up to 48 h behind
           {stale ? " · Loading…" : ""}
         </p>
       </div>
@@ -159,7 +159,7 @@ export function AnalyticsView() {
       {!account.insightsAllowed ? (
         <div className="mt-4">
           <Alert tone="info">
-            Analytics need a new Instagram permission.{" "}
+            Analytics need a new {platformName(account.platform)} permission.{" "}
             <Link href="/accounts" className="font-medium underline">
               Reconnect @{account.username}
             </Link>{" "}
@@ -168,7 +168,7 @@ export function AnalyticsView() {
         </div>
       ) : overview.daysWithData === 0 && !overview.lastCollectedAt ? (
         <div className="mt-4">
-          <Alert tone="info">Collecting numbers from Instagram. The first ones appear within about an hour while the worker is running.</Alert>
+          <Alert tone="info">Collecting numbers from {platformName(account.platform)}. The first ones appear within about an hour while the worker is running.</Alert>
         </div>
       ) : null}
 
@@ -274,9 +274,9 @@ export function AnalyticsView() {
                         <span className="min-w-0">
                           <span className="line-clamp-1">{post.caption || "(no caption)"}</span>
                           <span className="block text-xs text-neutral-500">
-                            {formatLabel[post.format]}
+                            {formatLabel(post.format, account.platform)}
                             {post.publishedAt ? ` · ${new Date(post.publishedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : ""}
-                            {post.metricsStatus === "PENDING" ? " · numbers coming soon" : post.metricsStatus === "UNAVAILABLE" ? " · no longer on Instagram" : ""}
+                            {post.metricsStatus === "PENDING" ? " · numbers coming soon" : post.metricsStatus === "UNAVAILABLE" ? " · no longer available" : ""}
                           </span>
                         </span>
                       </Link>
@@ -309,7 +309,9 @@ export function AnalyticsView() {
           </>
         ) : (
           <p className="mt-1 text-sm text-neutral-500">
-            {account.insightsAllowed
+            {account.platform === "FACEBOOK"
+              ? "Facebook no longer shares when a Page's followers are online."
+              : account.insightsAllowed
               ? "Instagram shares this for accounts with at least 100 followers. It appears here once available."
               : "Available after reconnecting with the insights permission."}
           </p>

@@ -51,8 +51,8 @@ export const oauthCallback: RequestHandler = async (req, res) => {
   const q = (v: unknown) => (typeof v === "string" && v ? v : undefined);
 
   try {
-    await completeConnect({ platform, code: q(req.query.code), state: q(req.query.state), error: q(req.query.error) });
-    back(`connected=${encodeURIComponent(slug)}`);
+    const { accounts } = await completeConnect({ platform, code: q(req.query.code), state: q(req.query.state), error: q(req.query.error) });
+    back(`connected=${encodeURIComponent(slug)}&count=${accounts.length}`);
   } catch (err) {
     if (err instanceof ConnectError) {
       if (err.reason === "platform_error") console.error(`[${platform}] connect failed:`, err.message);
@@ -66,9 +66,10 @@ export const oauthCallback: RequestHandler = async (req, res) => {
 
 function verifiedMetaUser(req: Parameters<RequestHandler>[0]): { platform: ReturnType<typeof platformFromSlug>; userId: string } {
   const platform = platformFromSlug(String(req.params.platform));
-  // Only Meta platforms send signed requests; Instagram is the only one so far.
-  if (platform !== "INSTAGRAM" || !env.instagram) throw new AppError(404, "NOT_FOUND", "Not found");
-  const payload = parseSignedRequest(req.body?.signed_request, env.instagram.appSecret);
+  // Only Meta platforms send signed requests, each signed with its own app secret.
+  const appSecret = platform === "INSTAGRAM" ? env.instagram?.appSecret : platform === "FACEBOOK" ? env.facebook?.appSecret : undefined;
+  if (!appSecret) throw new AppError(404, "NOT_FOUND", "Not found");
+  const payload = parseSignedRequest(req.body?.signed_request, appSecret);
   if (!payload) throw new AppError(400, "INVALID_SIGNED_REQUEST", "Invalid signed_request");
   return { platform, userId: payload.user_id };
 }

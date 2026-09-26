@@ -1,4 +1,4 @@
-// Shared test support: a fake Instagram Graph API, Cloudinary and Claude API (installed over global fetch), and
+// Shared test support: fake Instagram, Facebook (fakeFacebook.ts), Cloudinary and Claude APIs (installed over global fetch), and
 // helpers to create users, connected accounts, media and posts.
 import request from "supertest";
 import { expect, vi } from "vitest";
@@ -6,6 +6,9 @@ import { app } from "../src/app.js";
 import { prisma } from "../src/config/database.js";
 import { env } from "../src/config/env.js";
 import { encryptToken } from "../src/utils/tokenCrypto.js";
+import { FB_PAGE, handleFacebook, PAGE_TOKEN, resetFacebook } from "./fakeFacebook.js";
+
+export { fb, FB_PAGE, FB_USER } from "./fakeFacebook.js";
 
 // ─── Fake Instagram + Cloudinary ────────────────────────────────────────────
 
@@ -84,9 +87,13 @@ export function installFakes() {
       calls: [],
     },
   };
+  resetFacebook();
   const realFetch = globalThis.fetch;
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = new URL(String(input));
+
+    const facebook = handleFacebook(url, init);
+    if (facebook) return facebook;
 
     if (url.host === "api.cloudinary.com") {
       const expectedAuth = `Basic ${Buffer.from(`${env.cloudinary!.apiKey}:${env.cloudinary!.apiSecret}`).toString("base64")}`;
@@ -233,6 +240,25 @@ export async function connectAccount(u: User, opts: { externalId?: string; usern
       insightsAllowed: opts.insightsAllowed ?? true,
       connectedById: u.userId,
       token: { create: { accessTokenEnc: encryptToken("ig-token"), expiresAt: new Date(Date.now() + 50 * 86_400_000), scopes: [] } },
+    },
+  });
+}
+
+/** A connected Facebook Page (the fake's Page, with its Page token that doesn't expire). */
+export async function connectPage(u: User, opts: { status?: "ACTIVE" | "NEEDS_REAUTH" } = {}) {
+  return prisma.socialAccount.create({
+    data: {
+      workspaceId: u.workspaceId,
+      platform: "FACEBOOK",
+      externalId: FB_PAGE,
+      appScopedId: "fb-app-scoped-user-1",
+      accountType: "PAGE",
+      username: "punecafe",
+      name: "Pune Cafe",
+      status: opts.status ?? "ACTIVE",
+      insightsAllowed: true,
+      connectedById: u.userId,
+      token: { create: { accessTokenEnc: encryptToken(PAGE_TOKEN), expiresAt: null, scopes: ["pages_manage_posts", "read_insights"] } },
     },
   });
 }
