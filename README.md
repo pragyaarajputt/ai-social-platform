@@ -1,4 +1,4 @@
-# AI Social: social media management with AI
+# PostDrip: social media management with AI
 
 Connect your social accounts (Instagram and Facebook Pages; LinkedIn, Threads, X, YouTube and TikTok planned), write a post once with AI help, and publish or schedule it to every platform from one dashboard.
 
@@ -300,7 +300,7 @@ Post responses include each target's `metrics`.
 
 **Worth knowing:**
 - **Reach over a range** is the sum of daily reach: someone reached on two days counts twice.
-- **Only posts published through AI Social** have per-post numbers; account numbers cover everything on the account.
+- **Only posts published through PostDrip** have per-post numbers; account numbers cover everything on the account.
 - **Day boundaries:** Instagram decides where each day ends. Days here are requested as UTC days; confirm against a real account.
 
 ## Tests

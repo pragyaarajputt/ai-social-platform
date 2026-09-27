@@ -70,7 +70,7 @@ export function sendWorkspaceInvite(
     to,
     subject: `${invite.inviterName} invited you to ${invite.workspaceName}`,
     text:
-      `${invite.inviterName} invited you to join "${invite.workspaceName}" on AI Social as ${roleNames[invite.role] ?? invite.role.toLowerCase()}.
+      `${invite.inviterName} invited you to join "${invite.workspaceName}" on PostDrip as ${roleNames[invite.role] ?? invite.role.toLowerCase()}.
 
 ` +
       `Accept the invite here:

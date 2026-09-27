@@ -27,7 +27,7 @@ const schema = z.object({
   RATE_LIMIT_AUTH_MAX: z.coerce.number().int().positive().default(20),
 
   SMTP_URL: optional,
-  EMAIL_FROM: z.string().default("AI Social <no-reply@localhost>"),
+  EMAIL_FROM: z.string().default("PostDrip <no-reply@localhost>"),
 
   GOOGLE_CLIENT_ID: optional,
   GOOGLE_CLIENT_SECRET: optional,

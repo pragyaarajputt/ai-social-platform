@@ -236,7 +236,7 @@ export function AnalyticsView() {
         </div>
         {posts.length === 0 ? (
           <p className="mt-3 text-sm text-neutral-500">
-            No posts published from here in this period. Only posts published through AI Social have per-post numbers.
+            No posts published from here in this period. Only posts published through PostDrip have per-post numbers.
           </p>
         ) : (
           <div className="mt-3 overflow-x-auto rounded-2xl border border-neutral-200 dark:border-neutral-800">

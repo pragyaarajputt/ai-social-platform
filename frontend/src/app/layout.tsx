@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: { default: "AI Social", template: "%s · AI Social" },
+  title: { default: "PostDrip", template: "%s · PostDrip" },
   description: "An AI-first social platform.",
 };
 
