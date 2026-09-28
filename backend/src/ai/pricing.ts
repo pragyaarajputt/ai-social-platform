@@ -14,6 +14,8 @@ const PRICES: [prefix: string, price: Price][] = [
   ["claude-opus-4-8", { input: 5, output: 25 }],
   ["claude-sonnet-5", { input: 2, output: 10 }],
   ["claude-haiku-4-5", { input: 1, output: 5 }],
+  // Gemini paid tier (ai.google.dev/gemini-api/docs/pricing, checked 2026-09-27; rises in 2027).
+  ["gemini-3.8-flash", { input: 0.75, output: 3.75 }],
 ];
 /** For a model we have no price for, assume the most expensive one so the spend cap still protects. */
 const UNKNOWN: Price = { input: 10, output: 50 };

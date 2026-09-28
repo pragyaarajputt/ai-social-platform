@@ -1,4 +1,4 @@
-import type { BetaContentBlockParam, BetaTextBlockParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
+import type { Part, SystemBlock } from "./types.js";
 import { instagramCapabilities as ig } from "../integrations/instagram/capabilities.js";
 
 // Prompts for the AI writing tools. Each has a version that is saved with every request, so a
@@ -62,8 +62,8 @@ export function neutralize(text: string): string {
   return text.replace(new RegExp(`</?\\s*(${TAG_NAMES.join("|")})\\s*>`, "gi"), "");
 }
 
-export function systemBlocks(voice: BrandVoiceInput | null): BetaTextBlockParam[] {
-  const blocks: BetaTextBlockParam[] = [{ type: "text", text: BASE_SYSTEM, cache_control: { type: "ephemeral" } }];
+export function systemBlocks(voice: BrandVoiceInput | null): SystemBlock[] {
+  const blocks: SystemBlock[] = [{ text: BASE_SYSTEM, cache: true }];
   const lines = [
     voice?.tone && `Tone: ${neutralize(voice.tone)}`,
     voice?.audience && `Audience: ${neutralize(voice.audience)}`,
@@ -73,21 +73,20 @@ export function systemBlocks(voice: BrandVoiceInput | null): BetaTextBlockParam[
   ].filter(Boolean);
   if (lines.length) {
     blocks.push({
-      type: "text",
       text: `This workspace's brand voice. Follow it, except that a tone named in the task wins for that request.\n<brand_voice>\n${lines.join("\n")}\n</brand_voice>`,
       // The brand voice changes rarely, so it's cached along with everything before it.
-      cache_control: { type: "ephemeral" },
+      cache: true,
     });
   }
   return blocks;
 }
 
-const imageBlocks = (urls: string[]): BetaContentBlockParam[] => urls.map((url) => ({ type: "image", source: { type: "url", url } }));
+const imageBlocks = (urls: string[]): Part[] => urls.map((url) => ({ type: "image", url }));
 
 const toneLine = (tone: Tone | undefined) =>
   tone ? `Tone: ${TONE_GUIDE[tone]}` : "Tone: follow the brand voice if there is one; otherwise warm and natural.";
 
-export function captionsPrompt(p: { idea?: string; imageUrls: string[]; hasVideo: boolean; tone?: Tone }): BetaContentBlockParam[] {
+export function captionsPrompt(p: { idea?: string; imageUrls: string[]; hasVideo: boolean; tone?: Tone }): Part[] {
   const task = [
     "Write 3 different Instagram captions for this post.",
     toneLine(p.tone),
@@ -98,7 +97,7 @@ export function captionsPrompt(p: { idea?: string; imageUrls: string[]; hasVideo
   return [...imageBlocks(p.imageUrls), { type: "text", text: task.filter(Boolean).join("\n\n") }];
 }
 
-export function hashtagsPrompt(p: { caption: string; imageUrls: string[]; count: number }): BetaContentBlockParam[] {
+export function hashtagsPrompt(p: { caption: string; imageUrls: string[]; count: number }): Part[] {
   const task = [
     `Suggest ${p.count} hashtags for this Instagram post. Mix broad hashtags (popular, for reach) with niche ones (specific to the subject, audience or place, so the right people find it): about a third broad, the rest niche.`,
     "Only suggest hashtags that fit this post. No spammy or engagement-bait tags such as #followforfollow or #like4like. Don't repeat hashtags the caption already has. Write each tag without the # sign.",
@@ -108,7 +107,7 @@ export function hashtagsPrompt(p: { caption: string; imageUrls: string[]; count:
   return [...imageBlocks(p.imageUrls), { type: "text", text: task.filter(Boolean).join("\n\n") }];
 }
 
-export function rewritePrompt(p: { text: string; action: RewriteAction; tone?: Tone }): BetaContentBlockParam[] {
+export function rewritePrompt(p: { text: string; action: RewriteAction; tone?: Tone }): Part[] {
   const task =
     p.action === "tone" ? `Rewrite this caption in a new tone. ${toneLine(p.tone)} Keep its facts and roughly its length.` : REWRITE_TASK[p.action];
   const rules = `Keep any hashtags and @mentions it already has${p.action === "instagram" ? " (moving hashtags to the end)" : ""}. The result must be at most ${ig.captionMaxLength} characters.`;

@@ -31,6 +31,7 @@ export interface HashtagSuggestion {
 
 export interface AiUsage {
   configured: boolean;
+  provider: "anthropic" | "gemini";
   model: string;
   usedToday: number;
   dailyLimit: number;

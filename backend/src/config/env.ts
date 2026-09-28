@@ -61,9 +61,15 @@ const schema = z.object({
   // How often the worker looks for posts to publish.
   PUBLISH_POLL_INTERVAL_MS: z.coerce.number().int().min(500).default(5000),
 
-  // AI writing tools (Claude). Off unless ANTHROPIC_API_KEY is set.
+  // AI writing tools. AI_PROVIDER picks Claude ("anthropic") or Google Gemini ("gemini"); AI is off
+  // unless that provider's key is set.
+  AI_PROVIDER: z.enum(["anthropic", "gemini"]).default("anthropic"),
   ANTHROPIC_API_KEY: optional,
-  AI_MODEL: z.string().regex(/^claude-[w.-]+$/).default("claude-opus-5"),
+  GEMINI_API_KEY: optional,
+  GEMINI_MODEL: z.string().regex(/^gemini-[\w.-]+$/).default("gemini-3.8-flash"),
+  /** On Gemini's free tier usage costs nothing, so it's logged as $0. */
+  GEMINI_FREE_TIER: z.enum(["true", "false"]).default("false").transform((v) => v === "true"),
+  AI_MODEL: z.string().regex(/^claude-[\w.-]+$/).default("claude-opus-5"),
   /** Requests that reach Claude, per workspace per UTC day. */
   AI_DAILY_REQUESTS_PER_WORKSPACE: z.coerce.number().int().min(0).default(50),
   /** Estimated spend across all workspaces per UTC day, in US dollars. AI pauses when it's reached. */
@@ -144,7 +150,10 @@ export const env = {
       : undefined,
   publishPollIntervalMs: e.PUBLISH_POLL_INTERVAL_MS,
   ai: {
+    provider: e.AI_PROVIDER,
+    /** Anthropic (Claude). */
     apiKey: e.ANTHROPIC_API_KEY,
+    gemini: { apiKey: e.GEMINI_API_KEY, model: e.GEMINI_MODEL, freeTier: e.GEMINI_FREE_TIER },
     model: e.AI_MODEL,
     dailyRequestsPerWorkspace: e.AI_DAILY_REQUESTS_PER_WORKSPACE,
     dailySpendCapMicros: Math.round(e.AI_DAILY_SPEND_CAP_USD * 1_000_000),

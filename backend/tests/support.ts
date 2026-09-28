@@ -56,8 +56,18 @@ interface Fake {
     /** Responses for the next calls, in order; when empty, a plain OK reply is used. */
     replies: Response[];
   };
+  gemini: {
+    /** Requests sent to the Gemini API: model, API key header and body. */
+    requests: { model: string; key: string | null; body: Record<string, any> }[];
+    replies: Response[];
+    /** Image downloads from res.cloudinary.com (Gemini gets photos inline). */
+    imageFetches: string[];
+  };
 }
 export let fake: Fake;
+
+/** The bytes the fake Cloudinary serves for any image, so tests can check what was sent inline. */
+export const FAKE_IMAGE = Buffer.from("fake-jpeg-bytes");
 
 export const IG_USER = "17841400000000001";
 const V = () => env.instagram!.graphVersion;
@@ -77,6 +87,7 @@ export function installFakes() {
     createFailures: [],
     cloudinary: new Map(),
     claude: { requests: [], replies: [] },
+    gemini: { requests: [], replies: [], imageFetches: [] },
     profile: { userId: IG_USER, username: "brand" },
     insights: {
       media: { views: 1200, reach: 800, likes: 90, comments: 12, shares: 7, saved: 15, total_interactions: 124, profile_visits: 20, follows: 3, ig_reels_avg_watch_time: 6400 },
@@ -93,7 +104,20 @@ export function installFakes() {
   resetFacebook();
   const realFetch = globalThis.fetch;
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-    const url = new URL(String(input));
+    const url = new URL(input instanceof Request ? input.url : String(input));
+
+    if (url.host === "generativelanguage.googleapis.com") {
+      const m = /\/models\/([^/:]+):generateContent$/.exec(url.pathname);
+      if (!m) throw new Error(`Unexpected Gemini call: ${url.pathname}`);
+      const key = new Headers(init?.headers).get("x-goog-api-key");
+      fake.gemini.requests.push({ model: m[1]!, key, body: JSON.parse(String(init?.body)) });
+      if (key !== env.ai.gemini.apiKey) return json(400, { error: { code: 400, message: "API key not valid. Please pass a valid API key.", status: "INVALID_ARGUMENT" } });
+      return fake.gemini.replies.shift() ?? geminiReply({ captions: [{ text: "ok" }] });
+    }
+    if (url.host === "res.cloudinary.com") {
+      fake.gemini.imageFetches.push(url.toString());
+      return new Response(FAKE_IMAGE, { status: 200, headers: { "Content-Type": "image/jpeg" } });
+    }
 
     const facebook = handleFacebook(url, init);
     if (facebook) return facebook;
@@ -215,6 +239,25 @@ export function claudeReply(
 
 export function claudeError(status: number, type: string) {
   return json(status, { type: "error", error: { type, message: type } });
+}
+
+/** A Gemini generateContent response whose text is `output` as JSON. */
+export function geminiReply(
+  output: unknown,
+  opts: { finishReason?: string; blockReason?: string; modelVersion?: string; usage?: Record<string, number> } = {},
+) {
+  return json(200, {
+    candidates: opts.blockReason
+      ? []
+      : [{ content: { role: "model", parts: [{ text: typeof output === "string" ? output : JSON.stringify(output) }] }, finishReason: opts.finishReason ?? "STOP", index: 0 }],
+    ...(opts.blockReason && { promptFeedback: { blockReason: opts.blockReason } }),
+    usageMetadata: { promptTokenCount: 1200, candidatesTokenCount: 150, thoughtsTokenCount: 50, cachedContentTokenCount: 200, totalTokenCount: 1400, ...opts.usage },
+    modelVersion: opts.modelVersion ?? "gemini-3.8-flash",
+  });
+}
+
+export function geminiError(status: number, message: string, statusText = "UNAVAILABLE") {
+  return json(status, { error: { code: status, message, status: statusText } });
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

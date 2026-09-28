@@ -1,27 +1,31 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { BetaContentBlockParam, BetaTextBlockParam, MessageCreateParamsNonStreaming } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import type { z } from "zod";
 import { env } from "../config/env.js";
 import { AppError } from "../utils/AppError.js";
 import type { TokenUsage } from "./pricing.js";
+import { checkOutput, type AiProvider, type GenerateRequest, type GenerateResult, type Part, type SystemBlock } from "./types.js";
 
-// The one place that talks to Claude. Uses the official SDK; every response is checked against a
-// Zod schema, and refusals, unusable output and API errors are told apart for logging.
+// Claude through the official SDK. Every response is checked against a Zod schema, and refusals,
+// unusable output and API errors are told apart for logging.
 
-export const isAiConfigured = () => env.ai.apiKey !== undefined;
-
-let client: Anthropic | undefined;
+let client: { key: string; sdk: Anthropic } | undefined;
 function getClient(): Anthropic {
-  if (!env.ai.apiKey) throw new AppError(501, "NOT_CONFIGURED", "AI writing isn't set up on this server yet");
-  client ??= new Anthropic({
-    apiKey: env.ai.apiKey,
-    maxRetries: env.ai.maxRetries,
-    timeout: 60_000,
-    // Looked up on every call (not captured once), so tests can replace global fetch.
-    fetch: (url, init) => globalThis.fetch(url, init),
-  });
-  return client;
+  const key = env.ai.apiKey;
+  if (!key) throw new AppError(501, "NOT_CONFIGURED", "AI writing isn't set up on this server yet");
+  if (client?.key !== key) {
+    client = {
+      key,
+      sdk: new Anthropic({
+        apiKey: key,
+        maxRetries: env.ai.maxRetries,
+        timeout: 60_000,
+        // Looked up on every call (not captured once), so tests can replace global fetch.
+        fetch: (url, init) => globalThis.fetch(url, init),
+      }),
+    };
+  }
+  return client.sdk;
 }
 
 // Haiku 4.5 predates the effort setting.
@@ -30,67 +34,58 @@ const supportsEffort = (model: string) => !model.startsWith("claude-haiku-4-5");
 // re-runs it on the model Anthropic recommends for that case, within the same call.
 const supportsDefaultFallback = (model: string) => model === "claude-opus-5" || model.startsWith("claude-opus-5-2");
 
-export interface ClaudeRequest<T> {
-  /** Stable blocks first: they are cached, so repeated requests pay less for them. */
-  system: BetaTextBlockParam[];
-  content: BetaContentBlockParam[];
-  schema: z.ZodType<T>;
-  /** Our user ID. Lets Anthropic tell users apart when investigating abuse; no personal data. */
-  userId: string;
-}
+const toSystem = (blocks: SystemBlock[]): BetaTextBlockParam[] =>
+  // Stable blocks are cached, so repeated requests pay less for them.
+  blocks.map((b) => ({ type: "text", text: b.text, ...(b.cache && { cache_control: { type: "ephemeral" as const } }) }));
 
-export type ClaudeResult<T> = { model: string; usage: TokenUsage } & (
-  | { kind: "ok"; output: T }
-  | { kind: "refused" }
-  | { kind: "bad_output"; reason: string }
-);
+const toContent = (parts: Part[]): BetaContentBlockParam[] =>
+  parts.map((p) => (p.type === "image" ? { type: "image", source: { type: "url", url: p.url } } : { type: "text", text: p.text }));
 
-export async function askClaude<T>(req: ClaudeRequest<T>): Promise<ClaudeResult<T>> {
-  const model = env.ai.model;
-  const format = betaZodOutputFormat(req.schema);
-  const params: MessageCreateParamsNonStreaming = {
-    model,
-    // Room for adaptive thinking plus a few captions; only what's used is billed.
-    max_tokens: 8000,
-    system: req.system,
-    messages: [{ role: "user", content: req.content }],
-    // Short writing tasks don't need deep thinking; low effort keeps them quick and cheap.
-    output_config: { format: { type: format.type, schema: format.schema }, ...(supportsEffort(model) && { effort: "low" }) },
-    metadata: { user_id: req.userId },
-    ...(supportsDefaultFallback(model) && { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" }),
-  };
+export const claudeProvider: AiProvider = {
+  name: "anthropic",
+  isConfigured: () => env.ai.apiKey !== undefined,
+  model: () => env.ai.model,
+  isFree: () => false,
 
-  let response;
-  try {
-    response = await getClient().beta.messages.create(params);
-  } catch (err) {
-    throw toAppError(err);
-  }
+  async generate<T>(req: GenerateRequest<T>): Promise<GenerateResult<T>> {
+    const model = env.ai.model;
+    const format = betaZodOutputFormat(req.schema);
+    const params: MessageCreateParamsNonStreaming = {
+      model,
+      // Room for adaptive thinking plus a few captions; only what's used is billed.
+      max_tokens: 8000,
+      system: toSystem(req.system),
+      messages: [{ role: "user", content: toContent(req.content) }],
+      // Short writing tasks don't need deep thinking; low effort keeps them quick and cheap.
+      output_config: { format: { type: format.type, schema: format.schema }, ...(supportsEffort(model) && { effort: "low" }) },
+      metadata: { user_id: req.userId },
+      ...(supportsDefaultFallback(model) && { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" }),
+    };
 
-  const usage: TokenUsage = {
-    inputTokens: response.usage.input_tokens,
-    outputTokens: response.usage.output_tokens,
-    cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
-    cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0,
-  };
-  const base = { model: response.model, usage };
+    let response;
+    try {
+      response = await getClient().beta.messages.create(params);
+    } catch (err) {
+      throw toAppError(err);
+    }
 
-  // A refusal after every fallback model declined. Checked before reading the content.
-  if (response.stop_reason === "refusal") return { ...base, kind: "refused" };
-  if (response.stop_reason === "max_tokens") return { ...base, kind: "bad_output", reason: "max_tokens" };
+    const usage: TokenUsage = {
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+      cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0,
+    };
+    const base = { model: response.model, usage };
 
-  const text = response.content.findLast((b) => b.type === "text");
-  if (!text || text.type !== "text") return { ...base, kind: "bad_output", reason: "no_text" };
-  let json: unknown;
-  try {
-    json = JSON.parse(text.text);
-  } catch {
-    return { ...base, kind: "bad_output", reason: "invalid_json" };
-  }
-  const parsed = req.schema.safeParse(json);
-  if (!parsed.success) return { ...base, kind: "bad_output", reason: "schema_mismatch" };
-  return { ...base, kind: "ok", output: parsed.data };
-}
+    // A refusal after every fallback model declined. Checked before reading the content.
+    if (response.stop_reason === "refusal") return { ...base, kind: "refused" };
+    if (response.stop_reason === "max_tokens") return { ...base, kind: "bad_output", reason: "max_tokens" };
+
+    const text = response.content.findLast((b) => b.type === "text");
+    const checked = checkOutput(text?.type === "text" ? text.text : undefined, req.schema);
+    return checked.ok ? { ...base, kind: "ok", output: checked.value } : { ...base, kind: "bad_output", reason: checked.reason };
+  },
+};
 
 /** SDK errors → what our users see. Details go to the server log, never to the browser. */
 function toAppError(err: unknown): unknown {

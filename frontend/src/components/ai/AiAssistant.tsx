@@ -188,7 +188,7 @@ export function AiAssistant({ workspaceId, caption, onCaptionChange, mediaIds, o
               <>Daily AI limit reached · resets {formatTime(new Date(usage.resetsAt))}</>
             ) : (
               <>
-                {usage.usedToday} / {usage.dailyLimit} AI uses today
+                {usage.usedToday} / {usage.dailyLimit} AI uses today · {usage.provider === "gemini" ? "Gemini" : "Claude"}
               </>
             )
           ) : null}

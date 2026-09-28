@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { askClaude, isAiConfigured, type ClaudeRequest } from "../ai/claude.js";
 import { costMicros } from "../ai/pricing.js";
+import { aiProvider } from "../ai/provider.js";
+import type { GenerateRequest } from "../ai/types.js";
 import { captionsPrompt, hashtagsPrompt, PROMPT_VERSIONS, rewritePrompt, systemBlocks } from "../ai/prompts.js";
 import { env } from "../config/env.js";
 import { prisma } from "../config/database.js";
@@ -44,7 +45,7 @@ async function reserve(ctx: Ctx, feature: AiFeature, promptVersion: string): Pro
   const since = startOfUtcDay();
   const outcome = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ai-quota:${ctx.workspaceId}`}))`;
-    const row = { workspaceId: ctx.workspaceId, userId: ctx.userId, feature, promptVersion, model: env.ai.model };
+    const row = { workspaceId: ctx.workspaceId, userId: ctx.userId, feature, promptVersion, model: aiProvider().model() };
 
     const used = await tx.aiRequest.count({ where: countedToday(ctx.workspaceId, since) });
     if (used >= env.ai.dailyRequestsPerWorkspace) {
@@ -73,8 +74,9 @@ async function reserve(ctx: Ctx, feature: AiFeature, promptVersion: string): Pro
  * Runs one request: reserve → Claude → check the output → record usage and the result.
  * `finish` turns Claude's parsed output into what the user gets, or null if it isn't usable.
  */
-async function run<T, R>(ctx: Ctx, feature: AiFeature, promptVersion: string, request: Omit<ClaudeRequest<T>, "userId">, finish: (output: T) => R | null) {
-  if (!isAiConfigured()) throw new AppError(501, "NOT_CONFIGURED", "AI writing isn't set up on this server yet");
+async function run<T, R>(ctx: Ctx, feature: AiFeature, promptVersion: string, request: Omit<GenerateRequest<T>, "userId">, finish: (output: T) => R | null) {
+  const provider = aiProvider();
+  if (!provider.isConfigured()) throw new AppError(501, "NOT_CONFIGURED", "AI writing isn't set up on this server yet");
   const requestId = await reserve(ctx, feature, promptVersion);
   const started = Date.now();
   const complete = (data: Prisma.AiRequestUpdateInput) =>
@@ -82,13 +84,13 @@ async function run<T, R>(ctx: Ctx, feature: AiFeature, promptVersion: string, re
 
   let result;
   try {
-    result = await askClaude({ ...request, userId: ctx.userId });
+    result = await provider.generate({ ...request, userId: ctx.userId });
   } catch (err) {
     await complete({ status: "ERROR", errorCode: err instanceof AppError ? err.code : "INTERNAL_ERROR" });
     throw err;
   }
 
-  const usage = { model: result.model, ...result.usage, costMicros: costMicros(result.model, result.usage) };
+  const usage = { model: result.model, ...result.usage, costMicros: provider.isFree() ? 0 : costMicros(result.model, result.usage) };
   if (result.kind === "refused") {
     await complete({ ...usage, status: "REFUSED" });
     throw new AppError(422, "AI_REFUSED", "AI couldn't help with this one. Try rewording it.");
@@ -199,8 +201,9 @@ export async function getUsage(workspaceId: string) {
   const since = startOfUtcDay();
   const used = await prisma.aiRequest.count({ where: countedToday(workspaceId, since) });
   return {
-    configured: isAiConfigured(),
-    model: env.ai.model,
+    configured: aiProvider().isConfigured(),
+    provider: aiProvider().name,
+    model: aiProvider().model(),
     usedToday: used,
     dailyLimit: env.ai.dailyRequestsPerWorkspace,
     resetsAt: startOfNextUtcDay(),
