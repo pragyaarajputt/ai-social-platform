@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { facebookFormat, facebookProblems, formatLabel, problemsFor } from "./platforms";
+import { accountLabel, facebookFormat, facebookProblems, formatLabel, linkedinFormat, problemsFor } from "./platforms";
 import type { MediaItem } from "./posts";
 
 const media = (m: Partial<MediaItem> = {}): MediaItem => ({
@@ -58,6 +58,36 @@ describe("problems per platform", () => {
   it("names formats the way each platform does", () => {
     expect(formatLabel("CAROUSEL", "FACEBOOK")).toBe("Multi-photo post");
     expect(formatLabel("CAROUSEL", "INSTAGRAM")).toBe("Carousel");
+    expect(formatLabel("CAROUSEL", "LINKEDIN")).toBe("Multi-image post");
+    expect(formatLabel("IMAGE", "LINKEDIN")).toBe("Photo");
     expect(formatLabel("TEXT", "FACEBOOK")).toBe("Text post");
+  });
+});
+
+describe("LinkedIn", () => {
+  it("allows text-only posts, photos, and one video (never a Reel)", () => {
+    expect(linkedinFormat([])).toBe("TEXT");
+    expect(linkedinFormat([media(), media()])).toBe("CAROUSEL");
+    expect(linkedinFormat([media({ type: "VIDEO", width: 1080, height: 1920, durationSec: 30 })])).toBe("VIDEO");
+    expect(linkedinFormat([media(), media({ type: "VIDEO" })])).toBeNull();
+  });
+
+  it("checks LinkedIn's text and video limits", () => {
+    expect(problemsFor("LINKEDIN", "Hiring!", [])).toEqual([]);
+    expect(problemsFor("LINKEDIN", "x".repeat(3001), [])).toEqual(["Text is 3,001 characters; LinkedIn allows 3,000."]);
+    const video = { type: "VIDEO" as const, format: "mp4", bytes: 5_000_000, durationSec: 20 };
+    expect(problemsFor("LINKEDIN", "", [media(video)])).toEqual([]);
+    expect(problemsFor("LINKEDIN", "", [media({ ...video, format: "mov" })])).toEqual(["LinkedIn videos must be MP4."]);
+    expect(problemsFor("LINKEDIN", "", [media({ ...video, durationSec: 2 })])).toEqual(["LinkedIn videos must be between 3 seconds and 30 minutes long."]);
+    expect(problemsFor("LINKEDIN", "", [media({ ...video, bytes: 600 * 1024 * 1024 })])).toEqual(["The video is larger than 500 MB."]);
+  });
+});
+
+describe("accountLabel()", () => {
+  it("uses @handles on Instagram, Page names on Facebook and people's names on LinkedIn", () => {
+    expect(accountLabel({ platform: "INSTAGRAM", username: "brand", name: "Brand" })).toBe("@brand");
+    expect(accountLabel({ platform: "FACEBOOK", username: "punecafe", name: "Pune Cafe" })).toBe("Pune Cafe");
+    expect(accountLabel({ platform: "LINKEDIN", username: null, name: "Pragya Rajput" })).toBe("Pragya Rajput");
+    expect(accountLabel({ platform: "LINKEDIN", username: null, name: null })).toBe("a LinkedIn profile");
   });
 });

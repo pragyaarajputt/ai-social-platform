@@ -144,6 +144,11 @@ export interface PlatformAdapter {
   refreshToken(token: TokenSet): Promise<TokenSet>;
   /** Earliest moment a token may be refreshed, if the platform restricts it. */
   refreshableAfter?(lastRefreshedAt: Date): Date;
+  /**
+   * Whether a token can be renewed without the user (absent: always). When it can't, the worker leaves
+   * it alone until it expires, and the account asks for a reconnect before then.
+   */
+  canRefresh?(token: { hasRefreshToken: boolean }): boolean;
 
   /** The post format this platform will use for these media, or null if it can't post them. */
   chooseFormat(media: FormatMedia[]): PostFormat | null;

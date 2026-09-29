@@ -272,7 +272,7 @@ describe("analytics API", () => {
     expect((await request(app).get(`/api/v1/workspaces/${u.workspaceId}/analytics/overview?days=5`).set(auth(u))).status).toBe(400);
     expect((await request(app).get(`/api/v1/workspaces/${other.workspaceId}/analytics/overview`).set(auth(u))).status).toBe(404);
     // No accounts yet: an empty answer, not an error.
-    expect((await request(app).get(`/api/v1/workspaces/${u.workspaceId}/analytics/overview`).set(auth(u))).body).toEqual({ accounts: [], account: null });
+    expect((await request(app).get(`/api/v1/workspaces/${u.workspaceId}/analytics/overview`).set(auth(u))).body).toEqual({ accounts: [], account: null, withoutAnalytics: [] });
   });
 
   it("lists published posts with their numbers, sorted, posts without numbers last", async () => {

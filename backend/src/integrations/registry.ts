@@ -2,11 +2,13 @@ import type { SocialPlatform } from "../generated/prisma/enums.js";
 import { AppError } from "../utils/AppError.js";
 import { facebookAdapter } from "./facebook/adapter.js";
 import { instagramAdapter } from "./instagram/adapter.js";
+import { linkedinAdapter } from "./linkedin/adapter.js";
 import type { PlatformAdapter } from "./types.js";
 
 const adapters: Partial<Record<SocialPlatform, PlatformAdapter>> = {
   INSTAGRAM: instagramAdapter,
   FACEBOOK: facebookAdapter,
+  LINKEDIN: linkedinAdapter,
 };
 
 /** URL segment → platform, e.g. "instagram" → "INSTAGRAM". */
@@ -20,6 +22,13 @@ export function getAdapter(platform: SocialPlatform): PlatformAdapter {
   const adapter = adapters[platform];
   if (!adapter) throw new AppError(404, "PLATFORM_NOT_SUPPORTED", `${platform} is not supported yet`);
   return adapter;
+}
+
+/** Platforms we can read post and account numbers from (not LinkedIn profiles, for example). */
+export function platformsWithAnalytics(): SocialPlatform[] {
+  return Object.values(adapters)
+    .filter((a) => a.insights)
+    .map((a) => a.platform);
 }
 
 export function listPlatforms() {

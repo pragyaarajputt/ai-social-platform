@@ -13,7 +13,7 @@ import { ApiError } from "@/lib/api";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { canEditPosts } from "@/lib/team";
 import { countHashtags, countMentions, INSTAGRAM } from "@/lib/instagramRules";
-import { CAPTION_MAX, formatFor, formatLabel, platformName, problemsFor as platformProblems } from "@/lib/platforms";
+import { accountLabel, CAPTION_MAX, formatFor, formatLabel, platformName, problemsFor as platformProblems } from "@/lib/platforms";
 import { formatDateTime, formatRelative, fromDateTimeLocal, localTimeZone, toDateTimeLocal, useNow } from "@/lib/dates";
 import { createPost, updatePost, uploadMedia, type MediaItem, type Post } from "@/lib/posts";
 import { listSocialAccounts, type SocialAccount } from "@/lib/workspaces";
@@ -107,15 +107,17 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
   // Selected accounts that can't be published to (e.g. an edited post whose account now needs
   // reconnecting, or was disconnected). They must be removed or reconnected before saving.
   const staleSelected = selected.filter((id) => !ready.some((a) => a.id === id));
-  const staleName = (id: string) =>
-    accounts.find((a) => a.id === id)?.username ?? initialPost?.targets.find((t) => t.account.id === id)?.account.username ?? "an account";
+  const staleName = (id: string) => {
+    const account = accounts.find((a) => a.id === id) ?? initialPost?.targets.find((t) => t.account.id === id)?.account;
+    return account ? accountLabel(account) : "an account";
+  };
   const problems = Array.from(
     new Set([
       // With several platforms selected, each problem says which one it's about.
       ...selected
         .filter((id) => !staleSelected.includes(id))
         .flatMap((id) => problemsFor(id).map((p) => (selectedPlatforms.length > 1 ? `${platformName(platformOf(id))}: ${p}` : p))),
-      ...staleSelected.map((id) => `Remove @${staleName(id)} or reconnect it first.`),
+      ...staleSelected.map((id) => `Remove ${staleName(id)} or reconnect it first.`),
       ...(scheduleProblem ? [scheduleProblem] : []),
     ]),
   );
@@ -333,7 +335,7 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
                         onChange={() => setSelected((s) => (checked ? s.filter((x) => x !== a.id) : [...s, a.id]))}
                       />
                       <PlatformIcon platform={a.platform} />
-                      <span className="font-medium">{a.platform === "FACEBOOK" ? a.name ?? a.username : `@${a.username}`}</span>
+                      <span className="font-medium">{accountLabel(a)}</span>
                       <span className="text-neutral-500">{platformName(a.platform)}</span>
                     </label>
                     {checked ? (
@@ -344,7 +346,7 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
                       ) : (
                         <div className="mt-2">
                           <textarea
-                            aria-label={`Caption for @${a.username}`}
+                            aria-label={`Caption for ${accountLabel(a)}`}
                             value={overrides[a.id]}
                             onChange={(e) => setOverrides((o) => ({ ...o, [a.id]: e.target.value }))}
                             rows={3}
@@ -372,7 +374,7 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
                     className="flex items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200"
                   >
                     <span>
-                      @{staleName(id)} can&apos;t be published to until it&apos;s{" "}
+                      {staleName(id)} can&apos;t be published to until it&apos;s{" "}
                       <Link href="/accounts" className="underline">
                         reconnected
                       </Link>
@@ -389,7 +391,7 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
               <p className="mt-2 text-xs text-neutral-500">
                 {notReady
                   .filter((a) => !selected.includes(a.id))
-                  .map((a) => `@${a.username}`)
+                  .map((a) => accountLabel(a))
                   .join(", ")}{" "}
                 {notReady.filter((a) => !selected.includes(a.id)).length === 1 ? "needs" : "need"} reconnecting.{" "}
                 <Link href="/accounts" className="underline">

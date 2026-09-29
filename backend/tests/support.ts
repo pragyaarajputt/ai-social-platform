@@ -1,4 +1,4 @@
-// Shared test support: fake Instagram, Facebook (fakeFacebook.ts), Cloudinary and Claude APIs (installed over global fetch), and
+// Shared test support: fake Instagram, Facebook (fakeFacebook.ts), LinkedIn (fakeLinkedIn.ts), Cloudinary and Claude APIs (installed over global fetch), and
 // helpers to create users, connected accounts, media and posts.
 import request from "supertest";
 import { expect, vi } from "vitest";
@@ -7,8 +7,10 @@ import { prisma } from "../src/config/database.js";
 import { env } from "../src/config/env.js";
 import { encryptToken } from "../src/utils/tokenCrypto.js";
 import { FB_PAGE, handleFacebook, PAGE_TOKEN, resetFacebook } from "./fakeFacebook.js";
+import { handleLinkedIn, LI_MEMBER, LI_TOKEN, resetLinkedIn } from "./fakeLinkedIn.js";
 
 export { fb, FB_PAGE, FB_USER } from "./fakeFacebook.js";
+export { li, LI_MEMBER } from "./fakeLinkedIn.js";
 
 // ─── Fake Instagram + Cloudinary ────────────────────────────────────────────
 
@@ -68,6 +70,9 @@ export let fake: Fake;
 
 /** The bytes the fake Cloudinary serves for any image, so tests can check what was sent inline. */
 export const FAKE_IMAGE = Buffer.from("fake-jpeg-bytes");
+/** The file the fake Cloudinary serves for any video (9 MB, so LinkedIn splits it into three parts). */
+export const FAKE_VIDEO = Buffer.alloc(9_000_000);
+for (let i = 0; i < FAKE_VIDEO.length; i++) FAKE_VIDEO[i] = i % 251;
 
 export const IG_USER = "17841400000000001";
 const V = () => env.instagram!.graphVersion;
@@ -102,6 +107,7 @@ export function installFakes() {
     },
   };
   resetFacebook();
+  resetLinkedIn();
   const realFetch = globalThis.fetch;
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
@@ -114,6 +120,12 @@ export function installFakes() {
       if (key !== env.ai.gemini.apiKey) return json(400, { error: { code: 400, message: "API key not valid. Please pass a valid API key.", status: "INVALID_ARGUMENT" } });
       return fake.gemini.replies.shift() ?? geminiReply({ captions: [{ text: "ok" }] });
     }
+    if (url.host === "res.cloudinary.com" && url.pathname.includes("/video/upload/")) {
+      // Honors byte ranges, as Cloudinary does.
+      const range = /^bytes=(\d+)-(\d+)$/.exec(new Headers(init?.headers).get("range") ?? "");
+      if (!range) return new Response(FAKE_VIDEO, { status: 200, headers: { "Content-Type": "video/mp4" } });
+      return new Response(FAKE_VIDEO.subarray(Number(range[1]), Number(range[2]) + 1), { status: 206, headers: { "Content-Type": "video/mp4" } });
+    }
     if (url.host === "res.cloudinary.com") {
       fake.gemini.imageFetches.push(url.toString());
       return new Response(FAKE_IMAGE, { status: 200, headers: { "Content-Type": "image/jpeg" } });
@@ -121,6 +133,8 @@ export function installFakes() {
 
     const facebook = handleFacebook(url, init);
     if (facebook) return facebook;
+    const linkedin = handleLinkedIn(url, init);
+    if (linkedin) return linkedin;
 
     if (url.host === "api.cloudinary.com") {
       const expectedAuth = `Basic ${Buffer.from(`${env.cloudinary!.apiKey}:${env.cloudinary!.apiSecret}`).toString("base64")}`;
@@ -312,7 +326,31 @@ export async function connectPage(u: User, opts: { status?: "ACTIVE" | "NEEDS_RE
   });
 }
 
-export async function addMedia(u: User, m: { type?: "IMAGE" | "VIDEO"; width?: number; height?: number; durationSec?: number; format?: string } = {}) {
+/** A connected LinkedIn profile (the fake member). Without a refresh token, its access can only be renewed by reconnecting. */
+export async function connectLinkedIn(u: User, opts: { expiresAt?: Date; refreshToken?: string; status?: "ACTIVE" | "NEEDS_REAUTH" } = {}) {
+  return prisma.socialAccount.create({
+    data: {
+      workspaceId: u.workspaceId,
+      platform: "LINKEDIN",
+      externalId: LI_MEMBER,
+      accountType: "PERSON",
+      name: "Pragya Rajput",
+      status: opts.status ?? "ACTIVE",
+      insightsAllowed: false,
+      connectedById: u.userId,
+      token: {
+        create: {
+          accessTokenEnc: encryptToken(LI_TOKEN),
+          refreshTokenEnc: opts.refreshToken ? encryptToken(opts.refreshToken) : null,
+          expiresAt: opts.expiresAt ?? new Date(Date.now() + 50 * 86_400_000),
+          scopes: ["openid", "profile", "w_member_social"],
+        },
+      },
+    },
+  });
+}
+
+export async function addMedia(u: User, m: { type?: "IMAGE" | "VIDEO"; width?: number; height?: number; durationSec?: number; format?: string; bytes?: number } = {}) {
   const type = m.type ?? "IMAGE";
   const publicId = `ai-social/${u.workspaceId}/${crypto.randomUUID()}`;
   return prisma.mediaAsset.create({
@@ -321,7 +359,7 @@ export async function addMedia(u: User, m: { type?: "IMAGE" | "VIDEO"; width?: n
       publicId,
       type,
       format: m.format ?? (type === "VIDEO" ? "mp4" : "png"),
-      bytes: 1_000_000,
+      bytes: m.bytes ?? 1_000_000,
       width: m.width ?? 1080,
       height: m.height ?? 1080,
       durationSec: m.durationSec ?? (type === "VIDEO" ? 20 : null),

@@ -64,7 +64,7 @@ export function Dashboard() {
                 <Link href={`/posts/${r.postId}`} className="underline">
                   {formatDateTime(new Date(r.scheduledAt))}
                 </Link>{" "}
-                — {riskMessage(r.risk, r.account.username)}
+                — {riskMessage(r.risk, r.account)}
               </li>
             ))}
           </ul>

@@ -1,5 +1,6 @@
 import { prisma } from "../config/database.js";
 import type { AccountDailyStats } from "../generated/prisma/client.js";
+import { platformsWithAnalytics } from "../integrations/registry.js";
 import { utcDay } from "../jobs/analytics.js";
 import type { AnalyticsQuery, TopPostsQuery } from "../schemas/analytics.schemas.js";
 import { thumbnailUrl } from "../storage/cloudinary.js";
@@ -27,9 +28,10 @@ function total(rows: AccountDailyStats[], key: DayMetric): number | null {
   return sum;
 }
 
+/** Accounts on platforms with analytics. */
 async function workspaceAccounts(workspaceId: string) {
   return prisma.socialAccount.findMany({
-    where: { workspaceId, status: { not: "DISCONNECTED" } },
+    where: { workspaceId, status: { not: "DISCONNECTED" }, platform: { in: platformsWithAnalytics() } },
     orderBy: { createdAt: "asc" },
     select: { id: true, platform: true, username: true, name: true, avatarUrl: true, status: true, insightsAllowed: true, audienceFetchedAt: true },
   });
@@ -43,9 +45,20 @@ async function pickAccount(workspaceId: string, accountId?: string) {
   return { accounts, account: account ?? null };
 }
 
+/** Connected platforms that have no analytics here, so the page can say why they're missing. */
+async function platformsWithoutAnalytics(workspaceId: string) {
+  const rows = await prisma.socialAccount.findMany({
+    where: { workspaceId, status: { not: "DISCONNECTED" }, platform: { notIn: platformsWithAnalytics() } },
+    distinct: ["platform"],
+    select: { platform: true },
+  });
+  return rows.map((r) => r.platform);
+}
+
 export async function getOverview(workspaceId: string, query: AnalyticsQuery, now = new Date()) {
   const { accounts, account } = await pickAccount(workspaceId, query.accountId);
-  if (!account) return { accounts, account: null };
+  const withoutAnalytics = await platformsWithoutAnalytics(workspaceId);
+  if (!account) return { accounts, account: null, withoutAnalytics };
 
   const end = utcDay(now);
   const start = new Date(end.getTime() - query.days * DAY);
@@ -87,6 +100,7 @@ export async function getOverview(workspaceId: string, query: AnalyticsQuery, no
   return {
     accounts,
     account,
+    withoutAnalytics,
     range: { days: query.days, from: start.toISOString().slice(0, 10), to: new Date(end.getTime() - DAY).toISOString().slice(0, 10) },
     totals: totals(current),
     previousTotals: totals(previous),

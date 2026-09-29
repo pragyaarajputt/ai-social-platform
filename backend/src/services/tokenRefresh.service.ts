@@ -43,7 +43,8 @@ export async function refreshDueTokens(now = new Date()): Promise<RefreshSummary
       continue;
     }
     const notBefore = adapter.refreshableAfter?.(token.lastRefreshedAt ?? token.createdAt);
-    if (notBefore && notBefore > now) {
+    const renewable = adapter.canRefresh?.({ hasRefreshToken: token.refreshTokenEnc !== null }) ?? true;
+    if (!renewable || (notBefore && notBefore > now)) {
       summary.skipped++;
       continue;
     }

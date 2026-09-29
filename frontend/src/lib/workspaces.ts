@@ -32,6 +32,8 @@ export interface SocialAccount {
   createdAt: string;
   tokenExpiresAt: string | null;
   tokenRefreshedAt: string | null;
+  /** False when access ends at tokenExpiresAt unless someone reconnects (LinkedIn). */
+  tokenRenews: boolean;
 }
 
 export interface PlatformInfo {

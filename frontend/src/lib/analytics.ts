@@ -37,10 +37,12 @@ export interface SeriesPoint {
 }
 
 export type Overview =
-  | { accounts: AnalyticsAccount[]; account: null }
+  | { accounts: AnalyticsAccount[]; account: null; withoutAnalytics: SocialAccount["platform"][] }
   | {
       accounts: AnalyticsAccount[];
       account: AnalyticsAccount;
+      /** Connected platforms that have no analytics here (e.g. LinkedIn). */
+      withoutAnalytics: SocialAccount["platform"][];
       range: { days: RangeDays; from: string; to: string };
       totals: DayTotals;
       previousTotals: DayTotals;

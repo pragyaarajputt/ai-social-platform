@@ -52,6 +52,14 @@ const schema = z.object({
   FACEBOOK_CONFIG_ID: optional,
   FACEBOOK_GRAPH_VERSION: z.string().regex(/^v\d+\.\d+$/).default("v26.0"),
 
+  // LinkedIn personal profiles (Share on LinkedIn + Sign In with LinkedIn using OpenID Connect).
+  // Connecting LinkedIn is off unless all three are set.
+  LINKEDIN_CLIENT_ID: optional,
+  LINKEDIN_CLIENT_SECRET: optional,
+  LINKEDIN_REDIRECT_URI: optional,
+  /** LinkedIn's monthly API version (YYYYMM). Each version is supported for about a year. */
+  LINKEDIN_API_VERSION: z.string().regex(/^\d{6}$/).default("202609"),
+
   // Cloudinary media storage. Uploading media is off unless all three are set.
   CLOUDINARY_CLOUD_NAME: optional,
   CLOUDINARY_API_KEY: optional,
@@ -137,6 +145,15 @@ export const env = {
           redirectUri: e.FACEBOOK_REDIRECT_URI,
           configId: e.FACEBOOK_CONFIG_ID,
           graphVersion: e.FACEBOOK_GRAPH_VERSION,
+        }
+      : undefined,
+  linkedin:
+    e.LINKEDIN_CLIENT_ID && e.LINKEDIN_CLIENT_SECRET && e.LINKEDIN_REDIRECT_URI
+      ? {
+          clientId: e.LINKEDIN_CLIENT_ID,
+          clientSecret: e.LINKEDIN_CLIENT_SECRET,
+          redirectUri: e.LINKEDIN_REDIRECT_URI,
+          apiVersion: e.LINKEDIN_API_VERSION,
         }
       : undefined,
   cloudinary:

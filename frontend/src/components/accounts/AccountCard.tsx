@@ -4,7 +4,7 @@ import { useState } from "react";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { Button } from "@/components/ui/Button";
 import { formatDateTime, formatRelative, useNow } from "@/lib/dates";
-import { platformName } from "@/lib/platforms";
+import { accountLabel, platformName } from "@/lib/platforms";
 import type { SocialAccount } from "@/lib/workspaces";
 
 const statusLabel: Record<SocialAccount["status"], { text: string; className: string }> = {
@@ -14,7 +14,7 @@ const statusLabel: Record<SocialAccount["status"], { text: string; className: st
   DISCONNECTED: { text: "Disconnected", className: "bg-neutral-100 text-neutral-600 dark:bg-neutral-900 dark:text-neutral-400" },
 };
 
-const accountTypeLabel: Record<string, string> = { BUSINESS: "Business", MEDIA_CREATOR: "Creator", PAGE: "Page" };
+const accountTypeLabel: Record<string, string> = { BUSINESS: "Business", MEDIA_CREATOR: "Creator", PAGE: "Page", PERSON: "Profile" };
 
 export function AccountCard({
   account,
@@ -45,11 +45,12 @@ export function AccountCard({
     loadDisconnectImpact().then(setImpact, () => setImpact("unknown"));
   }
   const status = statusLabel[account.status];
-  // Facebook Pages are known by their name; Instagram accounts by their @username.
-  const handle = account.platform === "FACEBOOK" ? (account.name ?? account.username ?? account.externalId) : account.username ? `@${account.username}` : (account.name ?? account.externalId);
+  const handle = accountLabel(account);
   const needsAttention = account.status === "NEEDS_REAUTH" || account.status === "REVOKED";
-  // Connected before analytics existed, or the insights permission wasn't granted.
-  const analyticsOff = account.status === "ACTIVE" && !account.insightsAllowed;
+  // Connected before analytics existed, or the insights permission wasn't granted. LinkedIn has no analytics.
+  const analyticsOff = account.status === "ACTIVE" && !account.insightsAllowed && account.platform !== "LINKEDIN";
+  // Access that ends unless someone reconnects (LinkedIn): offer to renew it any time.
+  const renewable = account.status === "ACTIVE" && !account.tokenRenews && account.tokenExpiresAt !== null;
 
   return (
     <div className="rounded-2xl border border-neutral-200 p-4 dark:border-neutral-800">
@@ -77,7 +78,9 @@ export function AccountCard({
       <p className="mt-3 text-sm text-neutral-500">
         {account.status === "ACTIVE"
           ? account.tokenExpiresAt
-            ? `Access renews automatically${expiryNote(account.tokenExpiresAt)}.`
+            ? account.tokenRenews
+              ? `Access renews automatically${expiryNote(account.tokenExpiresAt)}.`
+              : `Access lasts until ${formatDateTime(new Date(account.tokenExpiresAt))}. ${platformName(account.platform)} doesn't renew it automatically: renew it before then to keep publishing.`
             : `Access doesn't expire. It stops only if the app is removed on ${platformName(account.platform)} or you lose your role.`
           : account.status === "NEEDS_REAUTH"
             ? "Access to this account expired. Reconnect to keep publishing."
@@ -100,10 +103,10 @@ export function AccountCard({
 
       {canManage ? (
         <div className="mt-4 flex flex-wrap gap-2">
-          {needsAttention || analyticsOff ? (
+          {needsAttention || analyticsOff || renewable ? (
             <div className="w-auto">
               <Button variant={needsAttention ? "primary" : "secondary"} loading={reconnecting} onClick={onReconnect}>
-                Reconnect
+                {renewable && !analyticsOff ? "Renew access" : "Reconnect"}
               </Button>
             </div>
           ) : null}

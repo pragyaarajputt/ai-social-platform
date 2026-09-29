@@ -25,7 +25,8 @@ import {
   type TopPost,
 } from "@/lib/analytics";
 import { formatRelative, localTimeZone, useNow } from "@/lib/dates";
-import { formatLabel, platformName } from "@/lib/platforms";
+import { accountLabel, formatLabel, platformName } from "@/lib/platforms";
+import type { SocialAccount } from "@/lib/workspaces";
 import { Heatmap } from "./Heatmap";
 import { LineChart } from "./LineChart";
 
@@ -96,6 +97,7 @@ export function AnalyticsView() {
             Go to accounts
           </Link>
         </Alert>
+        <NoAnalyticsNote platforms={overview.withoutAnalytics} />
       </Page>
     );
   }
@@ -110,7 +112,7 @@ export function AnalyticsView() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${account.username ?? "instagram"}-posts-${range.from}-to-${range.to}.csv`;
+    a.download = `${account.username ?? account.name ?? "account"}-posts-${range.from}-to-${range.to}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -128,13 +130,13 @@ export function AnalyticsView() {
             >
               {overview.accounts.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.platform === "FACEBOOK" ? `${a.name ?? a.username} (Facebook)` : `@${a.username}`}
+                  {a.platform === "FACEBOOK" ? `${accountLabel(a)} (Facebook)` : accountLabel(a)}
                 </option>
               ))}
             </select>
           </label>
         ) : (
-          <p className="text-sm font-medium">{account.platform === "FACEBOOK" ? (account.name ?? account.username) : `@${account.username}`}</p>
+          <p className="text-sm font-medium">{accountLabel(account)}</p>
         )}
         <div role="group" aria-label="Date range" className="flex rounded-lg border border-neutral-300 p-0.5 text-sm dark:border-neutral-700">
           {RANGES.map((r) => (
@@ -161,7 +163,7 @@ export function AnalyticsView() {
           <Alert tone="info">
             Analytics need a new {platformName(account.platform)} permission.{" "}
             <Link href="/accounts" className="font-medium underline">
-              Reconnect @{account.username}
+              Reconnect {accountLabel(account)}
             </Link>{" "}
             and allow access to insights. Publishing keeps working either way.
           </Alert>
@@ -199,7 +201,7 @@ export function AnalyticsView() {
         ) : (
           <div className="mt-3">
             <LineChart
-              title={`Daily reach and views for @${account.username}, ${overview.range.from} to ${overview.range.to} (UTC days)`}
+              title={`Daily reach and views for ${accountLabel(account)}, ${overview.range.from} to ${overview.range.to} (UTC days)`}
               labels={overview.series.map((s) => s.date)}
               series={[
                 { label: "Reach", colorClass: "stroke-violet-600 fill-violet-600", values: overview.series.map((s) => s.reach) },
@@ -317,6 +319,7 @@ export function AnalyticsView() {
           </p>
         )}
       </section>
+      <NoAnalyticsNote platforms={overview.withoutAnalytics} />
     </Page>
   );
 }
@@ -356,5 +359,16 @@ function Page({ children }: { children: React.ReactNode }) {
       <h1 className="text-2xl font-semibold">Analytics</h1>
       <div className="mt-6">{children}</div>
     </div>
+  );
+}
+
+/** Connected platforms that aren't listed here, and why. */
+function NoAnalyticsNote({ platforms }: { platforms: SocialAccount["platform"][] }) {
+  if (platforms.length === 0) return null;
+  return (
+    <p className="mt-4 text-sm text-neutral-500">
+      {platforms.map(platformName).join(" and ")} {platforms.length === 1 ? "isn't" : "aren't"} shown here:{" "}
+      {platforms.includes("LINKEDIN") ? "LinkedIn only shares statistics for personal profiles with approved partner apps." : "analytics aren't available for it yet."}
+    </p>
   );
 }

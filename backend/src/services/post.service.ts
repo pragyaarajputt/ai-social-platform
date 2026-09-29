@@ -35,6 +35,11 @@ const postInclude = {
 
 type PostWithDetails = Prisma.PostGetPayload<{ include: typeof postInclude }>;
 
+/** How messages name an account: "@handle" when it has one, otherwise its name (e.g. a LinkedIn member). */
+export function accountHandle(account: { username: string | null; name: string | null }): string | undefined {
+  return account.username ? `@${account.username}` : (account.name ?? undefined);
+}
+
 /** Why a scheduled target will probably fail, if it will. */
 export type TargetRisk = "ACCOUNT_NEEDS_RECONNECT" | "ACCESS_EXPIRES_BEFORE_POST" | null;
 
@@ -138,7 +143,7 @@ async function planPost(
       problems.push({ field, message: "This account isn't connected to the workspace." });
       return null;
     }
-    const name = account.username ? `@${account.username}` : "This account";
+    const name = accountHandle(account) ?? "This account";
     if (account.status !== "ACTIVE") {
       problems.push({ field, message: `${name} needs to be reconnected before you can publish to it.` });
       return null;
@@ -385,7 +390,7 @@ export async function findAtRiskTargets(params: { workspaceId?: string; withinMs
     },
     include: {
       post: { select: { id: true, workspaceId: true, caption: true, authorId: true, author: { select: { email: true } } } },
-      socialAccount: { select: { id: true, username: true, status: true, token: { select: { expiresAt: true } } } },
+      socialAccount: { select: { id: true, platform: true, username: true, name: true, status: true, token: { select: { expiresAt: true } } } },
     },
     orderBy: { scheduledAt: "asc" },
   });
@@ -401,7 +406,7 @@ export async function listAtRisk(workspaceId: string) {
     targetId: target.id,
     caption: target.post.caption,
     scheduledAt: target.scheduledAt,
-    account: { id: target.socialAccount.id, username: target.socialAccount.username },
+    account: { id: target.socialAccount.id, platform: target.socialAccount.platform, username: target.socialAccount.username, name: target.socialAccount.name },
     risk,
   }));
 }

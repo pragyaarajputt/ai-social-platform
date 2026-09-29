@@ -142,7 +142,9 @@ export function AccountsPanel() {
                         ? "Business or Creator accounts"
                         : p.platform === "FACEBOOK"
                           ? "Pages you manage. Choose one or more in Facebook's window."
-                          : "Coming soon"}
+                          : p.platform === "LINKEDIN"
+                            ? "Your personal profile. Company Pages aren't supported yet."
+                            : "Coming soon"}
                     </p>
                   </div>
                 </div>

@@ -11,6 +11,7 @@ export function connectResultMessage(
       ? ` ${elsewhere} more ${elsewhere === 1 ? "is" : "are"} already connected to another workspace; disconnect ${elsewhere === 1 ? "it" : "them"} there to connect ${elsewhere === 1 ? "it" : "them"} here.`
       : "";
     if (connected === "facebook") return { tone: "success", text: `${count === 1 ? "Facebook Page connected." : `${count} Facebook Pages connected.`}${skipped}` };
+    if (connected === "linkedin") return { tone: "success", text: `LinkedIn profile connected. LinkedIn access lasts 60 days; renew it from this page before then.${skipped}` };
     return { tone: "success", text: `${platformName(connected)} account connected.${skipped}` };
   }
 
@@ -46,4 +47,4 @@ export function connectResultMessage(
 }
 
 export const platformDisplayName = (slug: string) =>
-  ({ instagram: "Instagram", facebook: "Facebook" })[slug.toLowerCase()] ?? (slug ? slug[0]!.toUpperCase() + slug.slice(1) : "The platform");
+  ({ instagram: "Instagram", facebook: "Facebook", linkedin: "LinkedIn" })[slug.toLowerCase()] ?? (slug ? slug[0]!.toUpperCase() + slug.slice(1) : "The platform");

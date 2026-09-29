@@ -1,5 +1,5 @@
 import { api, ApiError } from "./api";
-import type { PostFormat } from "./platforms";
+import { accountLabel, type PostFormat } from "./platforms";
 import type { SocialAccount } from "./workspaces";
 
 export interface MediaItem {
@@ -163,7 +163,7 @@ export interface AtRiskItem {
   targetId: string;
   caption: string;
   scheduledAt: string;
-  account: { id: string; username: string | null };
+  account: Pick<SocialAccount, "id" | "platform" | "username" | "name">;
   risk: Exclude<TargetRisk, null>;
 }
 
@@ -171,10 +171,10 @@ export async function listAtRisk(workspaceId: string): Promise<AtRiskItem[]> {
   return (await api<{ atRisk: AtRiskItem[] }>(`/workspaces/${workspaceId}/posts/at-risk`)).atRisk;
 }
 
-export const riskMessage = (risk: Exclude<TargetRisk, null>, username: string | null) =>
+export const riskMessage = (risk: Exclude<TargetRisk, null>, account: Pick<SocialAccount, "platform" | "username" | "name">) =>
   risk === "ACCOUNT_NEEDS_RECONNECT"
-    ? `@${username} needs to be reconnected, or this post will fail.`
-    : `@${username}'s access expires before the post time. Reconnect it to renew access.`;
+    ? `${accountLabel(account)} needs to be reconnected, or this post will fail.`
+    : `${accountLabel(account)}'s access expires before the post time. Reconnect it to renew access.`;
 
 export async function getPost(workspaceId: string, postId: string): Promise<Post> {
   return (await api<{ post: Post }>(`/workspaces/${workspaceId}/posts/${postId}`)).post;

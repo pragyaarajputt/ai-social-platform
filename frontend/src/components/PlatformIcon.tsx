@@ -11,6 +11,14 @@ export function PlatformIcon({ platform, className = "h-4 w-4" }: { platform: So
       </svg>
     );
   }
+  if (platform === "LINKEDIN") {
+    return (
+      <svg viewBox="0 0 24 24" className={`${className} shrink-0`} aria-hidden>
+        <rect width="24" height="24" rx="4" fill="#0A66C2" />
+        <path d="M7.1 9.6H4.6V19h2.5V9.6zM5.9 5.2a1.45 1.45 0 1 0 0 2.9 1.45 1.45 0 0 0 0-2.9zM19.4 13.8c0-2.5-.5-4.4-3.4-4.4-1.4 0-2.3.8-2.7 1.5V9.6h-2.4V19h2.5v-4.6c0-1.2.2-2.4 1.7-2.4s1.5 1.4 1.5 2.5V19h2.5l.3-5.2z" fill="#fff" />
+      </svg>
+    );
+  }
   if (platform === "INSTAGRAM") {
     return (
       <svg viewBox="0 0 24 24" className={`${className} shrink-0`} aria-hidden>

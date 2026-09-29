@@ -10,6 +10,8 @@ describe("connectResultMessage()", () => {
 
   it("confirms a successful connection", () => {
     expect(msg("connected=instagram")).toEqual({ tone: "success", text: "Instagram account connected." });
+    expect(msg("connected=linkedin&count=1")?.text).toBe("LinkedIn profile connected. LinkedIn access lasts 60 days; renew it from this page before then.");
+    expect(msg("error=cancelled&platform=linkedin")?.text).toBe("LinkedIn connection was cancelled. Nothing was changed.");
   });
 
   it("counts connected Facebook Pages", () => {

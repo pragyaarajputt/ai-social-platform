@@ -1,11 +1,11 @@
 import { prisma } from "../config/database.js";
 import { sendScheduledPostWarning } from "./email.service.js";
-import { findAtRiskTargets, type TargetRisk } from "./post.service.js";
+import { accountHandle, findAtRiskTargets, type TargetRisk } from "./post.service.js";
 
 const WINDOW_MS = 24 * 3_600_000;
 
-const explain = (risk: Exclude<TargetRisk, null>, username: string | null) => {
-  const name = username ? `@${username}` : "An account";
+const explain = (risk: Exclude<TargetRisk, null>, account: { username: string | null; name: string | null }) => {
+  const name = accountHandle(account) ?? "An account";
   return risk === "ACCOUNT_NEEDS_RECONNECT"
     ? `${name} needs to be reconnected.`
     : `${name}'s access expires before the post time. Reconnect it to renew access.`;
@@ -44,7 +44,7 @@ export async function runPreflightChecks(now = new Date()): Promise<{ warnedPost
       postId,
       caption: post.caption,
       scheduledAt: items[0]!.target.scheduledAt!,
-      problems: items.map((i) => explain(i.risk, i.target.socialAccount.username)),
+      problems: items.map((i) => explain(i.risk, i.target.socialAccount)),
     };
     for (const to of await recipients(post)) await sendScheduledPostWarning(to, warning);
     await prisma.postTarget.updateMany({ where: { id: { in: items.map((i) => i.target.id) } }, data: { preflightWarnedAt: now } });

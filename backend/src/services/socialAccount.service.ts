@@ -58,6 +58,15 @@ export async function listSocialAccounts(workspaceId: string) {
   const members = new Set(
     (await prisma.workspaceMember.findMany({ where: { workspaceId }, select: { userId: true } })).map((m) => m.userId),
   );
+  // Only whether a refresh token exists, never the token itself.
+  const withRefreshToken = new Set(
+    (
+      await prisma.oAuthToken.findMany({
+        where: { socialAccountId: { in: accounts.map((a) => a.id) }, refreshTokenEnc: { not: null } },
+        select: { socialAccountId: true },
+      })
+    ).map((t) => t.socialAccountId),
+  );
   return accounts.map(({ token, connectedBy, ...a }) => ({
     ...a,
     connectedBy: connectedBy
@@ -65,6 +74,8 @@ export async function listSocialAccounts(workspaceId: string) {
       : null,
     tokenExpiresAt: token?.expiresAt ?? null,
     tokenRefreshedAt: token?.lastRefreshedAt ?? null,
+    // False for e.g. LinkedIn: access ends at tokenExpiresAt unless someone reconnects.
+    tokenRenews: getAdapter(a.platform).canRefresh?.({ hasRefreshToken: withRefreshToken.has(a.id) }) ?? true,
   }));
 }
 
@@ -214,7 +225,7 @@ async function saveConnectedAccounts(
           actorId: userId,
           targetType: "social_account",
           targetId: account.id,
-          metadata: { platform, username: account.username ?? "" },
+          metadata: { platform, username: account.username ?? account.name ?? "" },
         },
         tx,
       );

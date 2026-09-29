@@ -9,6 +9,7 @@ import { Alert } from "@/components/ui/Alert";
 import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { ApiError } from "@/lib/api";
 import { formatDateTime, formatRelative } from "@/lib/dates";
+import { accountLabel } from "@/lib/platforms";
 import { listPosts, type Post, type PostStatus } from "@/lib/posts";
 import { PostStatusBadge } from "./PostStatusBadge";
 
@@ -102,7 +103,7 @@ export function PostList() {
                     {p.status === "SCHEDULED" && p.scheduledAt
                       ? `${formatDateTime(new Date(p.scheduledAt))} (${formatRelative(new Date(p.scheduledAt))})`
                       : new Date(p.createdAt).toLocaleString()}{" "}
-                    · {listedTargets(p).map((t) => (t.account.platform === "FACEBOOK" ? (t.account.name ?? t.account.username) : `@${t.account.username}`)).join(", ")}
+                    · {listedTargets(p).map((t) => accountLabel(t.account)).join(", ")}
                   </p>
                   {p.targets.some((t) => t.risk) ? (
                     <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">⚠ Needs attention before it goes out</p>

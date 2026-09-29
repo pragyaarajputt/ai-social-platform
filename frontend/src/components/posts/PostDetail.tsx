@@ -11,7 +11,7 @@ import { useWorkspace } from "@/components/workspace/WorkspaceProvider";
 import { engagementRate, formatCount, formatPercent } from "@/lib/analytics";
 import { ApiError } from "@/lib/api";
 import { formatDateTime, formatRelative, localTimeZone } from "@/lib/dates";
-import { formatLabel, platformName } from "@/lib/platforms";
+import { accountLabel, formatLabel, platformName } from "@/lib/platforms";
 import { PlatformIcon } from "@/components/PlatformIcon";
 import { cancelPost, deletePost, getPost, isInProgress, retryTarget, riskMessage, updatePost, type Post, type PostTarget } from "@/lib/posts";
 import { PostStatusBadge } from "./PostStatusBadge";
@@ -98,7 +98,7 @@ export function PostDetail({ postId }: { postId: string }) {
             <ul className="mt-3 flex flex-col gap-1 text-sm text-amber-800 dark:text-amber-300">
               {risky.map((t) => (
                 <li key={t.id}>
-                  ⚠ {riskMessage(t.risk!, t.account.username)}{" "}
+                  ⚠ {riskMessage(t.risk!, t.account)}{" "}
                   <Link href="/accounts" className="font-medium underline">
                     Fix
                   </Link>
@@ -236,7 +236,7 @@ function TargetRow({ target: t, canEdit, retrying, onRetry }: { target: PostTarg
         <div>
           <p className="flex items-center gap-2 font-medium">
             <PlatformIcon platform={t.account.platform} />
-            {t.account.platform === "FACEBOOK" ? (t.account.name ?? t.account.username) : `@${t.account.username}`}
+            {accountLabel(t.account)}
           </p>
           <p className="text-sm text-neutral-500">
             {platformName(t.account.platform)} · {formatLabel(t.format, t.account.platform)}
@@ -277,7 +277,7 @@ function TargetRow({ target: t, canEdit, retrying, onRetry }: { target: PostTarg
               </div>
             ) : (
               <Link href="/accounts" className="text-sm font-medium underline">
-                Reconnect @{t.account.username}, then retry
+                Reconnect {accountLabel(t.account)}, then retry
               </Link>
             )}
           </div>
