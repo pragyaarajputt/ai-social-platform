@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { VerifyEmailBanner } from "@/components/auth/VerifyEmailBanner";
+import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
 import { WorkspaceProvider } from "@/components/workspace/WorkspaceProvider";
 import "./globals.css";
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <SiteHeader />
             <VerifyEmailBanner />
             <main className="flex flex-1 flex-col">{children}</main>
+            <SiteFooter />
           </WorkspaceProvider>
         </AuthProvider>
       </body>

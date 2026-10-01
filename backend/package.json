@@ -40,6 +40,7 @@
     "jose": "^6.2.12",
     "nodemailer": "^10.0.10",
     "pg": "^8.23.0",
+    "prisma": "^7.10.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -51,7 +52,6 @@
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",
     "nodemon": "^3.1.14",
-    "prisma": "^7.10.0",
     "supertest": "^7.3.0",
     "tsx": "^4.23.15",
     "typescript": "~6.0.3",

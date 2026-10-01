@@ -80,6 +80,17 @@ export function SignupForm() {
           <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-800" />
         </div>
         <GoogleButton />
+        <p className="mt-4 text-center text-xs text-neutral-500">
+          By creating an account you agree to our{" "}
+          <Link href="/terms" className="underline">
+            Terms
+          </Link>{" "}
+          and{" "}
+          <Link href="/privacy" className="underline">
+            Privacy Policy
+          </Link>
+          .
+        </p>
       </AuthCard>
     </RedirectIfAuthenticated>
   );

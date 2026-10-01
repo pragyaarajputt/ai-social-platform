@@ -101,6 +101,31 @@ if (!parsed.success) {
 
 const e = parsed.data;
 
+/**
+ * Settings that are fine locally but wrong on a live server. Errors stop the server from starting;
+ * warnings are logged. Only checked when NODE_ENV=production.
+ */
+export function productionProblems(v: Pick<typeof e, "APP_URL" | "CORS_ORIGIN" | "SMTP_URL" | "TRUST_PROXY" | "AI_PROVIDER" | "GEMINI_FREE_TIER">) {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  // Secure cookies and platform logins (OAuth redirects) need HTTPS.
+  if (!v.APP_URL.startsWith("https://")) errors.push("APP_URL: must be an https:// address in production");
+  // Requests are only accepted from CORS_ORIGIN, and links in emails point to APP_URL: the same site.
+  if (new URL(v.CORS_ORIGIN).origin !== new URL(v.APP_URL).origin) errors.push("CORS_ORIGIN: must be the same site as APP_URL");
+  if (!v.SMTP_URL) warnings.push("SMTP_URL isn't set: emails (verification, password resets, invites) are only printed to the log");
+  if (!v.TRUST_PROXY) warnings.push("TRUST_PROXY isn't set: behind a proxy, rate limits see the proxy's address instead of visitors'");
+  if (v.AI_PROVIDER === "gemini" && v.GEMINI_FREE_TIER) {
+    warnings.push("GEMINI_FREE_TIER=true: on Gemini's free tier Google may use prompts to improve its products");
+  }
+  return { errors, warnings };
+}
+
+if (e.NODE_ENV === "production") {
+  const { errors, warnings } = productionProblems(e);
+  if (errors.length) throw new Error(`Invalid environment configuration:\n${errors.map((p) => `  ${p}`).join("\n")}`);
+  for (const w of warnings) console.warn(`Warning: ${w}`);
+}
+
 let tokenKeys;
 try {
   tokenKeys = parseKeyRing(e.TOKEN_ENCRYPTION_KEYS, e.TOKEN_ENCRYPTION_KEY);
