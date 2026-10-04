@@ -68,6 +68,11 @@ const schema = z.object({
 
   // How often the worker looks for posts to publish.
   PUBLISH_POLL_INTERVAL_MS: z.coerce.number().int().min(500).default(5000),
+  /**
+   * Turns on POST /api/v1/internal/run-jobs for hosts without an always-on worker (e.g. Vercel): an
+   * outside scheduler calls it every minute with "Authorization: Bearer <CRON_SECRET>". Off when unset.
+   */
+  CRON_SECRET: optional.refine((v) => v === undefined || v.length >= 32, "must be at least 32 characters"),
 
   // AI writing tools. AI_PROVIDER picks Claude ("anthropic") or Google Gemini ("gemini"); AI is off
   // unless that provider's key is set.
@@ -191,6 +196,7 @@ export const env = {
         }
       : undefined,
   publishPollIntervalMs: e.PUBLISH_POLL_INTERVAL_MS,
+  cronSecret: e.CRON_SECRET,
   ai: {
     provider: e.AI_PROVIDER,
     /** Anthropic (Claude). */

@@ -1,57 +1,13 @@
 import { prisma } from "./config/database.js";
 import { env } from "./config/env.js";
-import { runAnalyticsCollection } from "./jobs/analytics.js";
-import { runConnectionHealthChecks } from "./jobs/connectionHealth.js";
-import { reencryptOldTokens } from "./jobs/keyRotation.js";
+import { MAINTENANCE_INTERVAL_MS, runMaintenance } from "./jobs/maintenance.js";
 import { runPublishCycle } from "./jobs/publishQueue.js";
-import { runPreflightChecks } from "./services/preflight.service.js";
-import { purgeExpiredConnectStates, refreshDueTokens } from "./services/tokenRefresh.service.js";
 
 // Background jobs. Run with `npm run worker`, separately from the API. Safe to run several:
 // - publishing (including scheduled posts once due): every few seconds; rows are claimed with
 //   SKIP LOCKED, so no post is taken twice;
-// - maintenance (token refresh, connection health checks, scheduled-post warnings, analytics
-//   collection, re-encryption after a key rotation): hourly, guarded by a Postgres advisory lock.
-
-const MAINTENANCE_INTERVAL_MS = 60 * 60_000;
-const MAINTENANCE_LOCK_ID = 7_310_001; // arbitrary constant: "token refresh"
-
-/**
- * Runs maintenance only if no other worker is running it right now. The advisory lock is held by
- * this transaction and released automatically when it ends, even if the process dies.
- */
-async function runMaintenance() {
-  try {
-    await prisma.$transaction(
-      async (tx) => {
-        const [row] = await tx.$queryRaw<{ locked: boolean }[]>`SELECT pg_try_advisory_xact_lock(${MAINTENANCE_LOCK_ID}) AS locked`;
-        if (!row?.locked) {
-          console.log("[worker] another worker holds the lock; skipping this run");
-          return;
-        }
-        const summary = await refreshDueTokens();
-        const purged = await purgeExpiredConnectStates();
-        const health = await runConnectionHealthChecks();
-        // After refreshing and checking, so warnings reflect each account's latest state.
-        const preflight = await runPreflightChecks();
-        // Last, and never allowed to break the rest of maintenance.
-        const analytics = await runAnalyticsCollection().catch((err: unknown) => {
-          console.error("[worker] analytics collection failed:", err);
-          return null;
-        });
-        const rotation = await reencryptOldTokens();
-        console.log(
-          `[worker] token refresh: ${JSON.stringify(summary)}; expired connect states purged: ${purged}; ` +
-            `health checks: ${JSON.stringify(health)}; scheduled-post warnings: ${JSON.stringify(preflight)}; ` +
-            `analytics: ${JSON.stringify(analytics)}; re-encrypted: ${JSON.stringify(rotation)}`,
-        );
-      },
-      { maxWait: 5_000, timeout: 10 * 60_000 },
-    );
-  } catch (err) {
-    console.error("[worker] maintenance failed:", err);
-  }
-}
+// - maintenance (jobs/maintenance.ts): hourly, guarded by a Postgres advisory lock.
+// Hosts without an always-on process (e.g. Vercel) call POST /api/v1/internal/run-jobs instead.
 
 let publishing = false;
 async function runPublishing() {

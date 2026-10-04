@@ -698,3 +698,12 @@ model AccountAudience {
 
   @@map("account_audience")
 }
+
+/// When each background job last ran. Used where there's no always-on worker to keep time between runs
+/// (the run-jobs endpoint, e.g. on Vercel): a run is claimed by moving last_run_at forward atomically.
+model JobRun {
+  name      String   @id @db.VarChar(40)
+  lastRunAt DateTime @map("last_run_at") @db.Timestamptz(3)
+
+  @@map("job_runs")
+}

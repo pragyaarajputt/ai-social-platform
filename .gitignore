@@ -12,6 +12,9 @@ coverage/
 !.env.example
 # Non-secret test settings
 !backend/.env.test
+# Vercel: local project link, and the empty static folder its API build creates
+.vercel/
+backend/public/
 .DS_Store
 Thumbs.db
 .vscode/
