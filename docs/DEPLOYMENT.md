@@ -2,55 +2,54 @@
 
 Two ways to run PostDrip online:
 
-- **[Vercel](#option-a-vercel-free) (free):** website and API on Vercel, database on Neon, and an outside
-  scheduler instead of the always-on worker. Good for a demo or portfolio. Vercel's free plan is for
+- **[Vercel](#option-a-vercel-free) (free):** website and API as one Vercel project (services), database
+  on Neon, and an outside scheduler instead of the always-on worker. Good for a demo or portfolio. Vercel's free plan is for
   non-commercial use.
 - **[Railway](#option-b-railway) (~$5–10/month):** everything on one host, including the real worker.
   Better for a live product.
 
 ## Option A: Vercel (free)
 
-| Piece | Where | Notes |
+One Vercel project runs both parts as **services** (configured in the root `vercel.json`), on one
+address:
+
+| Service | Folder | Public path | Notes |
+|---|---|---|---|
+| `api` | `backend/` | `/api/*` (receives the full path, e.g. `/api/v1/...`) | Express, started from `src/server.ts`; each deploy applies database migrations (`npm run db:deploy`) |
+| `web` | `frontend/` | everything else | Next.js |
+
+| Also | Where | Notes |
 |---|---|---|
-| Website | Vercel project `postdrip-web`, root `frontend/` | Public; proxies `/api/v1` to the API |
-| API | Vercel project `postdrip-api`, root `backend/` | One serverless function (`backend/api/index.js`, `backend/vercel.json`); runs database migrations on each build |
 | Database | Neon Postgres (Vercel Marketplace) | Free; sleeps when idle |
 | Background jobs | cron-job.org calls `POST /api/v1/internal/run-jobs` every minute | Publishing on every call, maintenance at most hourly |
 
-Every push to `main` redeploys both projects.
+The browser only ever calls `/api/v1` on the same address, so login cookies stay first-party and no
+`API_URL` is needed on Vercel. Every push to `main` redeploys.
 
 ### A1. Accounts
 
 Sign in with GitHub at [vercel.com](https://vercel.com) (Hobby plan) and allow access to **only** the
 `ai-social-platform` repository. Create a free account at [cron-job.org](https://cron-job.org).
 
-### A2. The API project
+### A2. Create the project
 
-1. Vercel → **Add New → Project → ai-social-platform**. Name it `postdrip-api`, set **Root Directory**
-   to `backend`, leave Framework as **Other**. Build settings come from `backend/vercel.json`.
-2. Before deploying: **Storage → Create / Connect Database → Neon** (free), connected to this project.
-   This adds `DATABASE_URL` (pooled, used by the app) and `DATABASE_URL_UNPOOLED` (direct, used by
-   migrations).
-3. **Settings → Environment Variables**: the same list as Railway's `api` (step 3 below), except:
+1. Vercel → **Add New → Project → ai-social-platform**. Name it (e.g. `postdrip`). Leave **Root
+   Directory** as the repository root: Vercel reads the services from `vercel.json`.
+2. **Storage → Create / Connect Database → Neon** (free), connected to this project. This adds
+   `DATABASE_URL` (pooled, used by the app) and `DATABASE_URL_UNPOOLED` (direct, used by migrations).
+3. **Settings → Environment Variables**: the same list as Railway's `api`/`worker` (step 3 of
+   Option B), except:
    - leave out `DATABASE_URL` and `PORT` (Neon and Vercel provide them),
    - `TRUST_PROXY=true` (Vercel's edge sets the visitor's address),
    - add `CRON_SECRET=<new: 32+ random characters>`,
-   - `APP_URL` and `CORS_ORIGIN` are the **web** project's address (step A3).
-4. **Deploy**, then open `https://postdrip-api.vercel.app/ready`: it should show `"database":"up"`.
+   - `APP_URL` and `CORS_ORIGIN` are the project's address, e.g. `https://postdrip.vercel.app`
+     (shown after the first deploy; set them and redeploy).
+4. **Deploy**. Open the address: the home page loads, and signing up sends the verification email.
 
-### A3. The website project
-
-1. **Add New → Project → ai-social-platform** again. Name it `postdrip-web`, **Root Directory**
-   `frontend`, Framework **Next.js**.
-2. Environment variable: `API_URL=https://postdrip-api.vercel.app` (the API project's address; it is
-   built into the `/api/v1` rewrite, so redeploy after changing it).
-3. **Deploy**. Its address (e.g. `https://postdrip-web.vercel.app`) is the app's address: set it as
-   `APP_URL` and `CORS_ORIGIN` on the API project and redeploy the API.
-
-### A4. The scheduler
+### A3. The scheduler
 
 cron-job.org → **Create cronjob**:
-- URL: `https://postdrip-api.vercel.app/api/v1/internal/run-jobs`, method **POST**
+- URL: `https://<project address>/api/v1/internal/run-jobs`, method **POST**
 - Schedule: every minute
 - Advanced → Headers: `Authorization: Bearer <CRON_SECRET>`
 
@@ -58,16 +57,16 @@ Each call publishes posts that are due and, once an hour, runs maintenance (toke
 checks, warnings, analytics). A call that runs maintenance can take longer than cron-job.org's timeout;
 that's harmless (the work finishes on Vercel).
 
-### A5. Platforms and checks
+### A4. Platforms and checks
 
-Use the **web** address everywhere a redirect or link is needed (section 6 below):
-`https://<web address>/api/v1/integrations/<platform>/callback`,
-`https://<web address>/api/v1/auth/google/callback`, `/privacy`, `/terms`. Then run the go-live checks
-in section 7.
+Use the project address everywhere a redirect or link is needed (section 6 of Option B):
+`https://<project address>/api/v1/integrations/<platform>/callback`,
+`https://<project address>/api/v1/auth/google/callback`, `/privacy`, `/terms`. Then run the go-live
+checks (section 7 of Option B).
 
-Limits on the free setup: scheduled posts go out within about a minute of their time; a request can
-run for at most 60 seconds (long video uploads continue on the next scheduler call); the first request
-after Neon has been idle is a little slower.
+Limits on the free setup: scheduled posts go out within about a minute of their time; a single request
+has a time limit (long video uploads continue on the next scheduler call); the first request after Neon
+has been idle is a little slower.
 
 ## Option B: Railway
 
