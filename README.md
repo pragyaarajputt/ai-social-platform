@@ -2,6 +2,10 @@
 
 Connect your social accounts (Instagram and Facebook Pages; LinkedIn, Threads, X, YouTube and TikTok planned), write a post once with AI help, and publish or schedule it to every platform from one dashboard.
 
+🔗 **Live demo:** [ai-social-platform-nine.vercel.app](https://ai-social-platform-nine.vercel.app)
+
+![PostDrip walkthrough: dashboard, calendar, connected accounts and analytics](docs/postdrip-demo.gif)
+
 **Status:** Phase 9. Connect Instagram accounts and **Facebook Pages**, write once and publish to both, upload photos and videos, publish to one or more Instagram accounts (single image, carousel, Reel) **now or on a schedule**, plan posts on a calendar, and write with **AI**: captions in five tones (from an idea and/or the photos), hashtag suggestions, rewrites, and a workspace brand voice. **Analytics**: account reach, views, interactions and followers over time, per-post numbers, top posts (CSV export), and when followers are online.
 
 > `docs/PRD.md` describes the original social-network idea and is out of date. The product is now a social media management tool.
