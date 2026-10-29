@@ -45,23 +45,31 @@ export function AppPasswordForm({
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-3">
+    // Browsers and password managers must not fill this in: they'd offer the PostDrip login, and its
+    // password would be sent to Bluesky. "new-password" is the value browsers respect for that.
+    <form onSubmit={submit} autoComplete="off" className="flex flex-col gap-3">
       {error ? <Alert tone="error">{error}</Alert> : null}
       <FormField
         label="Handle"
+        name="bluesky-handle"
         placeholder="yourname.bsky.social"
-        autoComplete="username"
+        autoComplete="off"
         autoCapitalize="none"
         spellCheck={false}
+        data-1p-ignore
+        data-lpignore="true"
         required
         value={identifier}
         onChange={(e) => setIdentifier(e.target.value)}
       />
       <FormField
         label="App password"
+        name="bluesky-app-password"
         type="password"
         placeholder="xxxx-xxxx-xxxx-xxxx"
-        autoComplete="off"
+        autoComplete="new-password"
+        data-1p-ignore
+        data-lpignore="true"
         required
         value={appPassword}
         onChange={(e) => setAppPassword(e.target.value)}
