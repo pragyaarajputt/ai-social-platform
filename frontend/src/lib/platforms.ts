@@ -1,6 +1,7 @@
 import { INSTAGRAM, instagramFormat, instagramProblems } from "./instagramRules";
 import type { MediaItem } from "./posts";
 import type { SocialAccount, SocialPlatform } from "./workspaces";
+import { BLUESKY_MAX_BYTES, BLUESKY_MAX_GRAPHEMES, BLUESKY_THREAD_MAX_POSTS, byteLength, graphemeLength, splitThread as splitBlueskyThread } from "./blueskyThread";
 import { splitThread, weightedLength, X_MAX_WEIGHT, X_THREAD_MAX_POSTS } from "./xThread";
 
 // Per-platform rules and labels for the composer and post pages. Mirrors the backend adapters in
@@ -16,11 +17,12 @@ export const PLATFORM_NAMES: Record<SocialPlatform, string> = {
   X: "X",
   YOUTUBE: "YouTube",
   TIKTOK: "TikTok",
+  BLUESKY: "Bluesky",
 };
 export const platformName = (p: SocialPlatform) => PLATFORM_NAMES[p] ?? p;
 
 /**
- * How an account is named everywhere: "@handle" on Instagram and X, the Page name on Facebook, the person's
+ * How an account is named everywhere: "@handle" on Instagram, X and Bluesky, the Page name on Facebook, the person's
  * name on LinkedIn (LinkedIn profiles have no handle we can read).
  */
 export function accountLabel(account: Pick<SocialAccount, "platform" | "username" | "name">): string {
@@ -37,7 +39,7 @@ export function formatLabel(format: PostFormat, platform: SocialPlatform = "INST
     case "IMAGE":
       return platform === "INSTAGRAM" ? "Single image" : "Photo";
     case "CAROUSEL":
-      return platform === "FACEBOOK" || platform === "X" ? "Multi-photo post" : platform === "LINKEDIN" ? "Multi-image post" : "Carousel";
+      return platform === "FACEBOOK" || platform === "X" || platform === "BLUESKY" ? "Multi-photo post" : platform === "LINKEDIN" ? "Multi-image post" : "Carousel";
     case "REEL":
       return "Reel";
     case "VIDEO":
@@ -149,10 +151,35 @@ export function xProblems(caption: string, media: MediaItem[]): string[] {
   return problems;
 }
 
+/** Bluesky accounts. Mirrors backend/src/integrations/bluesky. Text longer than one post is published as a thread. */
+export const BLUESKY = { photosMax: 4 };
+
+export function blueskyFormat(media: FormatMedia[]): PostFormat | null {
+  if (media.length === 0) return "TEXT";
+  if (media.some((m) => m.type === "VIDEO")) return null;
+  return media.length === 1 ? "IMAGE" : "CAROUSEL";
+}
+
+export function blueskyProblems(caption: string, media: MediaItem[]): string[] {
+  const problems: string[] = [];
+  const posts = splitBlueskyThread(caption);
+  if (media.length === 0 && posts.length === 0) problems.push("Write something or add a photo.");
+  if (posts.length > BLUESKY_THREAD_MAX_POSTS) {
+    problems.push(`This text makes a thread of ${posts.length} posts on Bluesky; threads here can have at most ${BLUESKY_THREAD_MAX_POSTS}. Shorten it.`);
+  } else {
+    const tooLong = posts.findIndex((p) => graphemeLength(p) > BLUESKY_MAX_GRAPHEMES || byteLength(p) > BLUESKY_MAX_BYTES);
+    if (tooLong >= 0) problems.push(`Post ${tooLong + 1} of the thread is longer than Bluesky allows.`);
+  }
+  if (media.some((m) => m.type === "VIDEO")) problems.push("Videos can't be posted to Bluesky from PostDrip yet. Use photos, or remove Bluesky for this post.");
+  else if (media.length > BLUESKY.photosMax) problems.push(`Bluesky posts can have at most ${BLUESKY.photosMax} photos.`);
+  return problems;
+}
+
 export function formatFor(platform: SocialPlatform, media: MediaItem[]): PostFormat | null {
   if (platform === "FACEBOOK") return facebookFormat(media);
   if (platform === "LINKEDIN") return linkedinFormat(media);
   if (platform === "X") return xFormat(media);
+  if (platform === "BLUESKY") return blueskyFormat(media);
   return instagramFormat(media);
 }
 
@@ -160,5 +187,6 @@ export function problemsFor(platform: SocialPlatform, caption: string, media: Me
   if (platform === "FACEBOOK") return facebookProblems(caption, media);
   if (platform === "LINKEDIN") return linkedinProblems(caption, media);
   if (platform === "X") return xProblems(caption, media);
+  if (platform === "BLUESKY") return blueskyProblems(caption, media);
   return instagramProblems(caption, media);
 }

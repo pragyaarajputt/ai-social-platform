@@ -2,13 +2,13 @@
 
 [![CI](https://github.com/pragyaarajputt/ai-social-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/pragyaarajputt/ai-social-platform/actions/workflows/ci.yml)
 
-Connect your social accounts (Instagram, Facebook Pages, LinkedIn profiles and X; Threads, YouTube and TikTok planned), write a post once with AI help, and publish or schedule it to every platform from one dashboard.
+Connect your social accounts (Instagram, Facebook Pages, LinkedIn profiles, X and Bluesky; Threads, YouTube and TikTok planned), write a post once with AI help, and publish or schedule it to every platform from one dashboard.
 
 🔗 **Live demo:** [ai-social-platform-nine.vercel.app](https://ai-social-platform-nine.vercel.app)
 
 ![PostDrip walkthrough: dashboard, calendar, connected accounts and analytics](docs/postdrip-demo.gif)
 
-**Status:** Phase 9. Connect Instagram accounts, **Facebook Pages**, **LinkedIn** personal profiles and **X** (long posts become threads), write once and publish to all of them, upload photos and videos, publish to one or more Instagram accounts (single image, carousel, Reel) **now or on a schedule**, plan posts on a calendar, and write with **AI**: captions in five tones (from an idea and/or the photos), hashtag suggestions, rewrites, and a workspace brand voice. **Analytics**: account reach, views, interactions and followers over time, per-post numbers, top posts (CSV export), and when followers are online.
+**Status:** Phase 9. Connect Instagram accounts, **Facebook Pages**, **LinkedIn** personal profiles, **X** and **Bluesky** (long posts become threads), write once and publish to all of them, upload photos and videos, publish to one or more Instagram accounts (single image, carousel, Reel) **now or on a schedule**, plan posts on a calendar, and write with **AI**: captions in five tones (from an idea and/or the photos), hashtag suggestions, rewrites, and a workspace brand voice. **Analytics**: account reach, views, interactions and followers over time, per-post numbers, top posts (CSV export), and when followers are online.
 
 > `docs/PRD.md` describes the original social-network idea and is out of date. The product is now a social media management tool.
 
@@ -41,7 +41,7 @@ backend/
     ai/          Claude and Gemini clients behind one provider interface, versioned prompts, pricing
     config/      environment, app config, Prisma client
     generated/   generated Prisma client (gitignored)
-    integrations/ one adapter per social platform (instagram/, facebook/, linkedin/, x/), shared interface in types.ts, Meta HTTP/errors in meta.ts
+    integrations/ one adapter per social platform (instagram/, facebook/, linkedin/, x/, bluesky/; textThread.ts splits long text for X and Bluesky), shared interface in types.ts, Meta HTTP/errors in meta.ts
     jobs/        publish queue (claim, publish, retry) and analytics collection
     storage/     Cloudinary client
     controllers/ request handlers
@@ -238,6 +238,18 @@ The composer shows the exact thread before publishing: the frontend runs a copy 
 
 No analytics for X: X bills every read.
 
+## Bluesky
+
+Free, with no app to register. On the Accounts page, **Connect Bluesky** opens a form for the handle and an **app password** (created in Bluesky under Settings → Privacy and security → App passwords; never the main password). The API signs in once (`com.atproto.server.createSession`), keeps only the session's tokens (encrypted like every other token) and forgets the password. Endpoint: `POST /api/v1/workspaces/:id/social-accounts/bluesky/app-password` `{ identifier, appPassword }`, ADMIN+, rate-limited per IP.
+
+**Any server, not just bsky.social.** Bluesky accounts can live on any server (a PDS). The handle is resolved to the account's DID, and the DID document (from plc.directory, or the domain's `/.well-known/did.json` for `did:web`) names the server; sign-in, refreshes and posts all go there. Set `BLUESKY_SERVICE` to change where sign-in falls back to.
+
+**Posts and threads.** A post is 300 graphemes (what people see as characters) and 3000 bytes; longer text becomes a thread with the same splitting as X (`integrations/textThread.ts`, shared). Each reply names the first post as `root` and the previous one as `parent`. Links, `@mentions` and `#hashtags` are made clickable with **facets**, marked by UTF-8 byte offsets (mentions are resolved to DIDs; a handle that doesn't resolve stays plain text). Up to 4 photos (2 MB each) go on the first post, with their aspect ratio. Videos aren't supported yet.
+
+**Never posting twice, without giving up.** Each post is created with a record key (a TID) chosen and saved before the call. If an attempt dies without an answer, the retry reads that record (free, no sign-in needed): if it exists, it's counted as posted; if not, it's posted again. Unlike X, a lost answer never ends in "couldn't confirm".
+
+**Tokens.** Sessions last about 2 hours; `com.atproto.server.refreshSession` renews them and replaces the refresh token, so Bluesky uses the same locked, rotation-safe refresh as X. Deleting the app password in Bluesky ends the session, and the account then asks for a reconnect.
+
 ## Publishing
 
 1. **Upload:** the browser asks the API for a signed upload (`POST /workspaces/:id/media/upload-signature`), sends the file **straight to Cloudinary**, then registers it (`POST /workspaces/:id/media`). The API reads size, dimensions and duration from Cloudinary, not from the browser.
@@ -333,7 +345,7 @@ Post responses include each target's `metrics`.
 ## Tests
 
 ```bash
-cd backend && npm test    # API integration tests (auth, workspaces, team and invites, Instagram, Facebook, LinkedIn and X connect and publishing (including X threads and token rotation), connection safeguards, scheduling, AI (Claude and Gemini), analytics; fake Instagram, Facebook, LinkedIn, X, Cloudinary, Claude and Gemini APIs, so nothing is billed)
+cd backend && npm test    # API integration tests (auth, workspaces, team and invites, Instagram, Facebook, LinkedIn, X and Bluesky connect and publishing (including threads, facets and token rotation), connection safeguards, scheduling, AI (Claude and Gemini), analytics; fake Instagram, Facebook, LinkedIn, X, Bluesky, Cloudinary, Claude and Gemini APIs, so nothing is billed)
 cd frontend && npm test   # API client, session, dates, Instagram rules, platform rules, team permissions, hashtag merge, rewrite diff, analytics maths, time zones and CSV unit tests
 ```
 

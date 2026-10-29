@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { accountLabel, formatLabel, xFormat, xProblems } from "./platforms";
+import { graphemeLength, splitThread as splitBlueskyThread } from "./blueskyThread";
+import { accountLabel, blueskyFormat, blueskyProblems, formatLabel, xFormat, xProblems } from "./platforms";
 import type { MediaItem } from "./posts";
 import { splitThread, weightedLength, X_MAX_WEIGHT } from "./xThread";
 
@@ -42,5 +43,23 @@ describe("X threads in the composer", () => {
   it("names X accounts by handle and photo posts as multi-photo posts", () => {
     expect(accountLabel({ platform: "X", username: "pragya_builds", name: "Pragya" })).toBe("@pragya_builds");
     expect(formatLabel("CAROUSEL", "X")).toBe("Multi-photo post");
+  });
+});
+
+describe("Bluesky threads in the composer", () => {
+  it("counts what people see as characters and splits at 300", () => {
+    expect(graphemeLength("👩🏽‍💻 hi")).toBe(4);
+    const posts = splitBlueskyThread(Array.from({ length: 10 }, (_, i) => `Idea ${i + 1} is explained in this sentence about the product launch on Bluesky.`).join(" "));
+    expect(posts.length).toBeGreaterThan(1);
+    expect(posts.every((p, i) => graphemeLength(p) <= 300 && p.endsWith(` ${i + 1}/${posts.length}`))).toBe(true);
+  });
+
+  it("allows up to 4 photos and no videos", () => {
+    expect(blueskyFormat([media(), media()])).toBe("CAROUSEL");
+    expect(blueskyFormat([media({ type: "VIDEO" })])).toBeNull();
+    expect(blueskyProblems("Clip", [media({ type: "VIDEO" })])[0]).toContain("Videos can't be posted to Bluesky");
+    expect(blueskyProblems("Gallery", Array.from({ length: 5 }, () => media()))).toEqual(["Bluesky posts can have at most 4 photos."]);
+    expect(blueskyProblems("a ".repeat(400), [])).toEqual([]);
+    expect(accountLabel({ platform: "BLUESKY", username: "pragya.bsky.social", name: "Pragya" })).toBe("@pragya.bsky.social");
   });
 });

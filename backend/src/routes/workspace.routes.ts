@@ -32,6 +32,8 @@ workspaceRouter.post("/:workspaceId/invites/:inviteId/resend", requireWorkspace(
 workspaceRouter.delete("/:workspaceId/invites/:inviteId", requireWorkspace("ADMIN"), team.revokeInvite);
 workspaceRouter.get("/:workspaceId/social-accounts", requireWorkspace("VIEWER"), ws.listAccounts);
 workspaceRouter.post("/:workspaceId/social-accounts/:platform/connect", requireWorkspace("ADMIN"), ws.connectAccount);
+// Signing in with an app password (Bluesky): rate-limited per IP like the other sign-in endpoints.
+workspaceRouter.post("/:workspaceId/social-accounts/:platform/app-password", authLimiter, requireWorkspace("ADMIN"), ws.connectAccountWithAppPassword);
 workspaceRouter.get("/:workspaceId/social-accounts/:accountId/disconnect-impact", requireWorkspace("ADMIN"), ws.disconnectImpact);
 workspaceRouter.delete("/:workspaceId/social-accounts/:accountId", requireWorkspace("ADMIN"), ws.disconnectAccount);
 

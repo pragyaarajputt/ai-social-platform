@@ -76,7 +76,7 @@ describe("connecting LinkedIn", () => {
       ["LINKEDIN", false],
       ["INSTAGRAM", true],
     ]);
-    expect(list.body.platforms).toContainEqual({ platform: "LINKEDIN", displayName: "LinkedIn", configured: true });
+    expect(list.body.platforms).toContainEqual({ platform: "LINKEDIN", displayName: "LinkedIn", configured: true, connectMethod: "oauth" });
     // Tokens never go to the browser.
     expect(JSON.stringify(list.body)).not.toContain("li-token");
   });

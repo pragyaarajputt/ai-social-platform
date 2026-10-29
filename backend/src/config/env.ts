@@ -65,6 +65,10 @@ const schema = z.object({
   X_CLIENT_SECRET: optional,
   X_REDIRECT_URI: optional,
 
+  // Bluesky needs no app registration: people connect with an app password. This is where they sign in
+  // unless their handle points to another server.
+  BLUESKY_SERVICE: z.url().default("https://bsky.social"),
+
   // Cloudinary media storage. Uploading media is off unless all three are set.
   CLOUDINARY_CLOUD_NAME: optional,
   CLOUDINARY_API_KEY: optional,
@@ -195,6 +199,7 @@ export const env = {
     e.X_CLIENT_ID && e.X_CLIENT_SECRET && e.X_REDIRECT_URI
       ? { clientId: e.X_CLIENT_ID, clientSecret: e.X_CLIENT_SECRET, redirectUri: e.X_REDIRECT_URI }
       : undefined,
+  bluesky: { service: e.BLUESKY_SERVICE },
   cloudinary:
     e.CLOUDINARY_CLOUD_NAME && e.CLOUDINARY_API_KEY && e.CLOUDINARY_API_SECRET
       ? {
