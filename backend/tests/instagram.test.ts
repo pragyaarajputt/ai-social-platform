@@ -244,10 +244,11 @@ describe("connecting Instagram", () => {
     expect(raw).not.toContain("long-token");
     expect(raw).not.toContain("accessTokenEnc");
     expect(list.body.platforms).toEqual([
-      { platform: "INSTAGRAM", displayName: "Instagram", configured: true },
-      { platform: "FACEBOOK", displayName: "Facebook", configured: true },
-      { platform: "LINKEDIN", displayName: "LinkedIn", configured: true },
-      { platform: "X", displayName: "X", configured: true },
+      { platform: "INSTAGRAM", displayName: "Instagram", configured: true, connectMethod: "oauth" },
+      { platform: "FACEBOOK", displayName: "Facebook", configured: true, connectMethod: "oauth" },
+      { platform: "LINKEDIN", displayName: "LinkedIn", configured: true, connectMethod: "oauth" },
+      { platform: "X", displayName: "X", configured: true, connectMethod: "oauth" },
+      { platform: "BLUESKY", displayName: "Bluesky", configured: true, connectMethod: "app_password" },
     ]);
 
     const log = await prisma.auditLog.findFirst({ where: { action: "social_account.connected" } });

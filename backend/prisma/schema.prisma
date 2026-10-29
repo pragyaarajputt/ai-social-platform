@@ -50,6 +50,7 @@ enum SocialPlatform {
   X
   YOUTUBE
   TIKTOK
+  BLUESKY
 
   @@map("social_platform")
 }

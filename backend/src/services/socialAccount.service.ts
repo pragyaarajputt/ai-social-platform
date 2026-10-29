@@ -85,6 +85,9 @@ export async function startConnect(params: { userId: string; workspaceId: string
   if (!adapter.isConfigured()) {
     throw new AppError(501, "NOT_CONFIGURED", `${adapter.capabilities.displayName} isn't set up on this server yet`);
   }
+  if (adapter.connectMethod === "app_password") {
+    throw new AppError(400, "WRONG_CONNECT_METHOD", `${adapter.capabilities.displayName} connects with an app password`);
+  }
   const state = generateToken();
   const pkce = adapter.usesPkce ? createPkcePair() : null;
   await prisma.oAuthConnectState.create({
@@ -133,7 +136,57 @@ export async function completeConnect(params: {
     if (err instanceof PlatformApiError) throw new ConnectError("platform_error", err.message);
     throw err;
   }
+  return finishConnect(params.platform, adapter, stored.workspaceId, stored.userId, grants);
+}
 
+/**
+ * Connects an account that signs in with an app password (Bluesky) instead of a redirect. The password
+ * is exchanged for session tokens at once and never stored or logged.
+ */
+export async function connectWithAppPassword(params: {
+  userId: string;
+  workspaceId: string;
+  platform: SocialPlatform;
+  identifier: string;
+  appPassword: string;
+}) {
+  const adapter = getAdapter(params.platform);
+  const name = adapter.capabilities.displayName;
+  if (adapter.connectMethod !== "app_password" || !adapter.connectWithAppPassword) {
+    throw new AppError(400, "WRONG_CONNECT_METHOD", `${name} connects through its own sign-in page`);
+  }
+
+  let grants;
+  try {
+    grants = await adapter.connectWithAppPassword(params.identifier, params.appPassword);
+  } catch (err) {
+    if (!(err instanceof PlatformApiError)) throw err;
+    if (err.code === "BAD_REQUEST") {
+      throw new AppError(400, "SIGN_IN_FAILED", `${name} didn't accept that handle and app password. Check both, and use an app password, not your main password.`);
+    }
+    if (err.code === "RATE_LIMITED") throw new AppError(429, "TOO_MANY_REQUESTS", `${name} is limiting sign-ins right now. Try again in a few minutes.`);
+    throw new AppError(502, "PLATFORM_ERROR", `${name} couldn't be reached. Try again in a moment.`);
+  }
+
+  try {
+    return await finishConnect(params.platform, adapter, params.workspaceId, params.userId, grants);
+  } catch (err) {
+    if (err instanceof ConnectError) {
+      const status = err.reason === "connected_elsewhere" ? 409 : 400;
+      throw new AppError(status, err.reason.toUpperCase(), err.reason === "connected_elsewhere" ? `This ${name} account is already connected to another workspace.` : err.message);
+    }
+    throw err;
+  }
+}
+
+/** Saves the accounts a sign-in granted, whichever way the user signed in. */
+async function finishConnect(
+  platform: SocialPlatform,
+  adapter: ReturnType<typeof getAdapter>,
+  workspaceId: string,
+  userId: string,
+  grants: ConnectedAccountGrant[],
+) {
   // Only account types the platform lets us publish to (e.g. not personal Instagram accounts).
   const supported = grants.filter((g) => adapter.capabilities.supportedAccountTypes.includes(g.profile.accountType));
   if (supported.length === 0) {
@@ -141,14 +194,13 @@ export async function completeConnect(params: {
     throw new ConnectError("unsupported_account", `Account type ${grants[0]!.profile.accountType} can't be connected`);
   }
 
-  const { workspaceId, userId } = stored;
   const now = new Date();
 
   // An account can be active in only one workspace (also enforced by a unique index). Accounts
   // active elsewhere are skipped; which workspace has them is not revealed.
   const elsewhere = await prisma.socialAccount.findMany({
     where: {
-      platform: params.platform,
+      platform,
       externalId: { in: supported.map((g) => g.profile.externalId) },
       workspaceId: { not: workspaceId },
       status: { in: ["ACTIVE", "NEEDS_REAUTH"] },
@@ -163,7 +215,7 @@ export async function completeConnect(params: {
 
   // All granted accounts are saved together, so a login never half-connects.
   try {
-    return await saveConnectedAccounts(params.platform, adapter, workspaceId, userId, connectable, now, takenElsewhere.size);
+    return await saveConnectedAccounts(platform, adapter, workspaceId, userId, connectable, now, takenElsewhere.size);
   } catch (err) {
     // Another workspace connected the same account a moment ago: the unique index stops the second one.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {

@@ -121,7 +121,7 @@ describe("connecting X", () => {
 
     const list = await request(app).get(`/api/v1/workspaces/${u.workspaceId}/social-accounts`).set(auth(u));
     expect(list.body.accounts[0]).toMatchObject({ platform: "X", tokenRenews: true });
-    expect(list.body.platforms).toContainEqual({ platform: "X", displayName: "X", configured: true });
+    expect(list.body.platforms).toContainEqual({ platform: "X", displayName: "X", configured: true, connectMethod: "oauth" });
     expect(JSON.stringify(list.body)).not.toContain("x-token");
   });
 

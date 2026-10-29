@@ -29,7 +29,7 @@ export async function refreshDueTokens(now = new Date()): Promise<RefreshSummary
       expiresAt: { lt: new Date(now.getTime() + REFRESH_WINDOW_MS) },
       socialAccount: { status: "ACTIVE" },
     },
-    include: { socialAccount: { select: { id: true, workspaceId: true, platform: true } } },
+    include: { socialAccount: { select: { id: true, workspaceId: true, platform: true, externalId: true } } },
   });
 
   const summary: RefreshSummary = { checked: due.length, refreshed: 0, skipped: 0, failed: 0, needsReauth: 0 };
@@ -72,7 +72,7 @@ export type RefreshOutcome = "refreshed" | "fresh" | "failed" | "needs_reauth";
  * once they hold it.
  */
 export async function refreshAccountToken(
-  account: { id: string; workspaceId: string; platform: SocialPlatform },
+  account: { id: string; workspaceId: string; platform: SocialPlatform; externalId: string },
   now = new Date(),
   opts: { unlessValidFor?: number } = {},
 ): Promise<RefreshOutcome> {
@@ -92,7 +92,7 @@ export async function refreshAccountToken(
           refreshToken: token.refreshTokenEnc ? decryptToken(token.refreshTokenEnc) : undefined,
           expiresAt: token.expiresAt ?? undefined,
           scopes: token.scopes,
-        });
+        }, account);
         await tx.oAuthToken.update({
           where: { socialAccountId: account.id },
           data: {

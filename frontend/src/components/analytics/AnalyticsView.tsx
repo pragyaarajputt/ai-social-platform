@@ -371,6 +371,7 @@ function NoAnalyticsNote({ platforms }: { platforms: SocialAccount["platform"][]
       {[
         platforms.includes("LINKEDIN") ? "LinkedIn only shares statistics for personal profiles with approved partner apps." : null,
         platforms.includes("X") ? "X charges for every statistics request, so PostDrip doesn't collect them." : null,
+        platforms.includes("BLUESKY") ? "Bluesky statistics aren't collected yet." : null,
       ]
         .filter(Boolean)
         .join(" ") || "analytics aren't available for it yet."}

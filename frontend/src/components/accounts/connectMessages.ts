@@ -47,4 +47,4 @@ export function connectResultMessage(
 }
 
 export const platformDisplayName = (slug: string) =>
-  ({ instagram: "Instagram", facebook: "Facebook", linkedin: "LinkedIn", x: "X" })[slug.toLowerCase()] ?? (slug ? slug[0]!.toUpperCase() + slug.slice(1) : "The platform");
+  ({ instagram: "Instagram", facebook: "Facebook", linkedin: "LinkedIn", x: "X", bluesky: "Bluesky" })[slug.toLowerCase()] ?? (slug ? slug[0]!.toUpperCase() + slug.slice(1) : "The platform");

@@ -5,6 +5,7 @@ import { listPlatforms, platformFromSlug } from "../integrations/registry.js";
 import {
   completeConnect,
   ConnectError,
+  connectWithAppPassword,
   disconnectSocialAccount,
   getDisconnectImpact,
   getDataDeletionStatus,
@@ -33,6 +34,19 @@ export const connectAccount: RequestHandler = async (req, res) => {
   const platform = platformFromSlug(String(req.params.platform));
   res.json(await startConnect({ userId: req.user!.id, workspaceId: req.workspace!.id, platform }));
 };
+
+/** For platforms that connect with an app password (Bluesky). The password is never stored or logged. */
+export const connectAccountWithAppPassword: RequestHandler = async (req, res) => {
+  const platform = platformFromSlug(String(req.params.platform));
+  const { identifier, appPassword } = appPasswordSchema.parse(req.body ?? {});
+  const { accounts, skippedElsewhere } = await connectWithAppPassword({ userId: req.user!.id, workspaceId: req.workspace!.id, platform, identifier, appPassword });
+  res.status(201).json({ accounts, skippedElsewhere });
+};
+
+const appPasswordSchema = z.object({
+  identifier: z.string().trim().min(1, "Enter your handle").max(253, "That handle is too long"),
+  appPassword: z.string().trim().min(1, "Enter an app password").max(100, "That app password is too long"),
+});
 
 export const disconnectImpact: RequestHandler = async (req, res) => {
   res.json(await getDisconnectImpact(req.workspace!.id, accountIdParam(req.params.accountId)));

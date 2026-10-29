@@ -141,7 +141,15 @@ export interface PlatformAdapter {
    * offers and returns every account the user granted (one for Instagram; each chosen Page for Facebook).
    */
   connect(code: string, pkce?: { codeVerifier: string }): Promise<ConnectedAccountGrant[]>;
-  refreshToken(token: TokenSet): Promise<TokenSet>;
+  /**
+   * How people connect: "oauth" (the default) sends them to the platform's consent screen and back;
+   * "app_password" (Bluesky) has them type an app password created in the platform's settings, which
+   * connectWithAppPassword swaps for session tokens straight away.
+   */
+  connectMethod?: "oauth" | "app_password";
+  connectWithAppPassword?(identifier: string, appPassword: string): Promise<ConnectedAccountGrant[]>;
+  /** `account` is the connected account whose token this is (some platforms need its ID to refresh). */
+  refreshToken(token: TokenSet, account: { externalId: string }): Promise<TokenSet>;
   /** Earliest moment a token may be refreshed, if the platform restricts it. */
   refreshableAfter?(lastRefreshedAt: Date): Date;
   /**

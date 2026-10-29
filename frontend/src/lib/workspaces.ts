@@ -12,7 +12,7 @@ export interface Workspace {
   role: WorkspaceRole;
 }
 
-export type SocialPlatform = "INSTAGRAM" | "FACEBOOK" | "THREADS" | "LINKEDIN" | "X" | "YOUTUBE" | "TIKTOK";
+export type SocialPlatform = "INSTAGRAM" | "FACEBOOK" | "THREADS" | "LINKEDIN" | "X" | "YOUTUBE" | "TIKTOK" | "BLUESKY";
 
 export interface SocialAccount {
   id: string;
@@ -41,6 +41,8 @@ export interface PlatformInfo {
   displayName: string;
   /** False when the server has no app credentials for this platform yet. */
   configured: boolean;
+  /** "oauth": a redirect to the platform's consent screen; "app_password": a form here (Bluesky). */
+  connectMethod: "oauth" | "app_password";
 }
 
 /** Roles that may connect and disconnect accounts (mirrors the backend's requireWorkspace("ADMIN")). */
@@ -61,6 +63,14 @@ export async function startConnect(workspaceId: string, platform: SocialPlatform
     method: "POST",
   });
   return res.authorizationUrl;
+}
+
+/** Connects (or reconnects) an account that signs in with an app password (Bluesky). */
+export function connectWithAppPassword(workspaceId: string, platform: SocialPlatform, identifier: string, appPassword: string) {
+  return api<{ accounts: SocialAccount[]; skippedElsewhere: number }>(`/workspaces/${workspaceId}/social-accounts/${platform.toLowerCase()}/app-password`, {
+    method: "POST",
+    body: { identifier, appPassword },
+  });
 }
 
 /** Scheduled posts that use the account, shown before disconnecting it. */

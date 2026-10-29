@@ -1,5 +1,6 @@
 import type { SocialPlatform } from "../generated/prisma/enums.js";
 import { AppError } from "../utils/AppError.js";
+import { blueskyAdapter } from "./bluesky/adapter.js";
 import { facebookAdapter } from "./facebook/adapter.js";
 import { instagramAdapter } from "./instagram/adapter.js";
 import { linkedinAdapter } from "./linkedin/adapter.js";
@@ -11,6 +12,7 @@ const adapters: Partial<Record<SocialPlatform, PlatformAdapter>> = {
   FACEBOOK: facebookAdapter,
   LINKEDIN: linkedinAdapter,
   X: xAdapter,
+  BLUESKY: blueskyAdapter,
 };
 
 /** URL segment → platform, e.g. "instagram" → "INSTAGRAM". */
@@ -38,5 +40,6 @@ export function listPlatforms() {
     platform: a.platform,
     displayName: a.capabilities.displayName,
     configured: a.isConfigured(),
+    connectMethod: a.connectMethod ?? "oauth",
   }));
 }
