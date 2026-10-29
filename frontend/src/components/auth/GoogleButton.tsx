@@ -1,39 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 
 const START_URL = "/api/v1/auth/google";
 
-export function GoogleButton() {
-  const [checking, setChecking] = useState(false);
-  const [unavailable, setUnavailable] = useState(false);
+/**
+ * Starts Google sign-in, which also creates the account the first time. It's a plain navigation to the
+ * API, which redirects to Google. There's no "is Google set up?" check first: on a server that has just
+ * woken up that check could time out and wrongly say Google isn't available. When it really isn't, the
+ * API sends the browser back to the login page with a message.
+ */
+export function GoogleButton({ next = "/" }: { next?: string }) {
+  const [leaving, setLeaving] = useState(false);
 
-  async function start() {
-    setChecking(true);
-    try {
-      // When Google is configured the server answers with a redirect; when it isn't, with 501.
-      const res = await fetch(START_URL, { redirect: "manual", credentials: "same-origin" });
-      if (res.type === "opaqueredirect") {
-        // A full page load is required: this is an API route that redirects to Google, not a Next.js page.
-        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-        window.location.assign(START_URL);
-        return;
-      }
-      setUnavailable(true);
-    } catch {
-      setUnavailable(true);
-    }
-    setChecking(false);
+  function start() {
+    setLeaving(true);
+    // A full page load: this is an API route that redirects to Google, not a Next.js page.
+    window.location.assign(next === "/" ? START_URL : `${START_URL}?next=${encodeURIComponent(next)}`);
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <Button type="button" variant="secondary" loading={checking} onClick={start}>
-        Continue with Google
-      </Button>
-      {unavailable ? <Alert tone="info">Google sign-in isn&apos;t set up yet. Use your email and password.</Alert> : null}
-    </div>
+    <Button type="button" variant="secondary" loading={leaving} onClick={start}>
+      Continue with Google
+    </Button>
   );
 }

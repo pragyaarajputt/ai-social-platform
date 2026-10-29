@@ -337,13 +337,14 @@ describe("password reset", () => {
 });
 
 describe("Google sign-in", () => {
-  it("reports not configured when Google credentials are missing", async () => {
+  // The configured flow is in google.test.ts, with Google faked.
+  it("sends people back to the login page with a message when Google isn't set up", async () => {
     const start = await request(app).get(`${API}/google`);
-    expect(start.status).toBe(501);
-    expect(start.body.error.code).toBe("NOT_CONFIGURED");
+    expect(start.status).toBe(302);
+    expect(start.headers.location).toBe(`${env.appUrl}/login?error=google_unavailable`);
 
     const callback = await request(app).get(`${API}/google/callback?code=x&state=y`);
-    expect(callback.status).toBe(501);
+    expect(callback.headers.location).toBe(`${env.appUrl}/login?error=google_unavailable`);
   });
 });
 
