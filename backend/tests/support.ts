@@ -1,4 +1,4 @@
-// Shared test support: fake Instagram, Facebook (fakeFacebook.ts), LinkedIn (fakeLinkedIn.ts), Cloudinary and Claude APIs (installed over global fetch), and
+// Shared test support: fake Instagram, Facebook (fakeFacebook.ts), LinkedIn (fakeLinkedIn.ts), X (fakeX.ts), Cloudinary and Claude APIs (installed over global fetch), and
 // helpers to create users, connected accounts, media and posts.
 import request from "supertest";
 import { expect, vi } from "vitest";
@@ -8,9 +8,11 @@ import { env } from "../src/config/env.js";
 import { encryptToken } from "../src/utils/tokenCrypto.js";
 import { FB_PAGE, handleFacebook, PAGE_TOKEN, resetFacebook } from "./fakeFacebook.js";
 import { handleLinkedIn, LI_MEMBER, LI_TOKEN, resetLinkedIn } from "./fakeLinkedIn.js";
+import { handleX, resetX, X_REFRESH, X_TOKEN, X_USER } from "./fakeX.js";
 
 export { fb, FB_PAGE, FB_USER } from "./fakeFacebook.js";
 export { li, LI_MEMBER } from "./fakeLinkedIn.js";
+export { X_USER, xf } from "./fakeX.js";
 
 // ─── Fake Instagram + Cloudinary ────────────────────────────────────────────
 
@@ -108,6 +110,7 @@ export function installFakes() {
   };
   resetFacebook();
   resetLinkedIn();
+  resetX();
   const realFetch = globalThis.fetch;
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
@@ -135,6 +138,8 @@ export function installFakes() {
     if (facebook) return facebook;
     const linkedin = handleLinkedIn(url, init);
     if (linkedin) return linkedin;
+    const x = await handleX(url, init);
+    if (x) return x;
 
     if (url.host === "api.cloudinary.com") {
       const expectedAuth = `Basic ${Buffer.from(`${env.cloudinary!.apiKey}:${env.cloudinary!.apiSecret}`).toString("base64")}`;
@@ -344,6 +349,32 @@ export async function connectLinkedIn(u: User, opts: { expiresAt?: Date; refresh
           refreshTokenEnc: opts.refreshToken ? encryptToken(opts.refreshToken) : null,
           expiresAt: opts.expiresAt ?? new Date(Date.now() + 50 * 86_400_000),
           scopes: ["openid", "profile", "w_member_social"],
+        },
+      },
+    },
+  });
+}
+
+/** A connected X account (the fake user), with 2-hour access and a refresh token. */
+export async function connectX(u: User, opts: { expiresAt?: Date; refreshToken?: string | null; status?: "ACTIVE" | "NEEDS_REAUTH" } = {}) {
+  const refreshToken = opts.refreshToken === undefined ? X_REFRESH : opts.refreshToken;
+  return prisma.socialAccount.create({
+    data: {
+      workspaceId: u.workspaceId,
+      platform: "X",
+      externalId: X_USER,
+      accountType: "USER",
+      username: "pragya_builds",
+      name: "Pragya Rajput",
+      status: opts.status ?? "ACTIVE",
+      insightsAllowed: false,
+      connectedById: u.userId,
+      token: {
+        create: {
+          accessTokenEnc: encryptToken(X_TOKEN),
+          refreshTokenEnc: refreshToken ? encryptToken(refreshToken) : null,
+          expiresAt: opts.expiresAt ?? new Date(Date.now() + 2 * 3_600_000),
+          scopes: ["tweet.read", "tweet.write", "users.read", "media.write", "offline.access"],
         },
       },
     },

@@ -149,6 +149,12 @@ export interface PlatformAdapter {
    * it alone until it expires, and the account asks for a reconnect before then.
    */
   canRefresh?(token: { hasRefreshToken: boolean }): boolean;
+  /**
+   * The refresh token keeps working after the access token expires (X: access lasts 2 hours, the
+   * refresh token much longer), so an expired access token is refreshed instead of asking for a
+   * reconnect, and publishing refreshes it first when it's about to expire.
+   */
+  refreshTokenOutlivesAccessToken?: boolean;
 
   /** The post format this platform will use for these media, or null if it can't post them. */
   chooseFormat(media: FormatMedia[]): PostFormat | null;
