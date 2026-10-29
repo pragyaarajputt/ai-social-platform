@@ -1,5 +1,7 @@
 # PostDrip: social media management with AI
 
+[![CI](https://github.com/pragyaarajputt/ai-social-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/pragyaarajputt/ai-social-platform/actions/workflows/ci.yml)
+
 Connect your social accounts (Instagram and Facebook Pages; LinkedIn, Threads, X, YouTube and TikTok planned), write a post once with AI help, and publish or schedule it to every platform from one dashboard.
 
 🔗 **Live demo:** [ai-social-platform-nine.vercel.app](https://ai-social-platform-nine.vercel.app)
