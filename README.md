@@ -2,13 +2,13 @@
 
 [![CI](https://github.com/pragyaarajputt/ai-social-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/pragyaarajputt/ai-social-platform/actions/workflows/ci.yml)
 
-Connect your social accounts (Instagram and Facebook Pages; LinkedIn, Threads, X, YouTube and TikTok planned), write a post once with AI help, and publish or schedule it to every platform from one dashboard.
+Connect your social accounts (Instagram, Facebook Pages and LinkedIn profiles; Threads, X, YouTube and TikTok planned), write a post once with AI help, and publish or schedule it to every platform from one dashboard.
 
 🔗 **Live demo:** [ai-social-platform-nine.vercel.app](https://ai-social-platform-nine.vercel.app)
 
 ![PostDrip walkthrough: dashboard, calendar, connected accounts and analytics](docs/postdrip-demo.gif)
 
-**Status:** Phase 9. Connect Instagram accounts and **Facebook Pages**, write once and publish to both, upload photos and videos, publish to one or more Instagram accounts (single image, carousel, Reel) **now or on a schedule**, plan posts on a calendar, and write with **AI**: captions in five tones (from an idea and/or the photos), hashtag suggestions, rewrites, and a workspace brand voice. **Analytics**: account reach, views, interactions and followers over time, per-post numbers, top posts (CSV export), and when followers are online.
+**Status:** Phase 9. Connect Instagram accounts, **Facebook Pages** and **LinkedIn** personal profiles, write once and publish to all of them, upload photos and videos, publish to one or more Instagram accounts (single image, carousel, Reel) **now or on a schedule**, plan posts on a calendar, and write with **AI**: captions in five tones (from an idea and/or the photos), hashtag suggestions, rewrites, and a workspace brand voice. **Analytics**: account reach, views, interactions and followers over time, per-post numbers, top posts (CSV export), and when followers are online.
 
 > `docs/PRD.md` describes the original social-network idea and is out of date. The product is now a social media management tool.
 
@@ -21,7 +21,7 @@ Connect your social accounts (Instagram and Facebook Pages; LinkedIn, Threads, X
 - **Integrations:** Instagram API with Instagram Login and Facebook Pages API with Facebook Login for Business (Graph API v26.0), plain `fetch`, tokens encrypted with AES-256-GCM
 - **Media:** Cloudinary (direct browser uploads; REST API with plain `fetch`)
 - **Jobs:** a Postgres-backed queue (`post_targets` rows claimed with `FOR UPDATE SKIP LOCKED`), no Redis
-- **AI:** Claude (Claude Opus 5 by default) through the official `@anthropic-ai/sdk`, with structured outputs
+- **AI:** Claude (Claude Opus 5 by default) through the official `@anthropic-ai/sdk`, with structured outputs, or Google Gemini (`AI_PROVIDER=gemini`)
 
 ## Structure
 
@@ -38,10 +38,10 @@ backend/
     migrations/    SQL migrations (committed)
   prisma.config.ts Prisma CLI config
   src/
-    ai/          Claude client, versioned prompts, pricing
+    ai/          Claude and Gemini clients behind one provider interface, versioned prompts, pricing
     config/      environment, app config, Prisma client
     generated/   generated Prisma client (gitignored)
-    integrations/ one adapter per social platform (instagram/, facebook/), shared interface in types.ts, Meta HTTP/errors in meta.ts
+    integrations/ one adapter per social platform (instagram/, facebook/, linkedin/), shared interface in types.ts, Meta HTTP/errors in meta.ts
     jobs/        publish queue (claim, publish, retry) and analytics collection
     storage/     Cloudinary client
     controllers/ request handlers
@@ -312,7 +312,7 @@ Post responses include each target's `metrics`.
 ## Tests
 
 ```bash
-cd backend && npm test    # API integration tests (auth, workspaces, team and invites, Instagram and Facebook connect and publishing, connection safeguards, scheduling, AI, analytics; fake Instagram, Facebook, Cloudinary and Claude APIs, so nothing is billed)
+cd backend && npm test    # API integration tests (auth, workspaces, team and invites, Instagram, Facebook and LinkedIn connect and publishing, connection safeguards, scheduling, AI (Claude and Gemini), analytics; fake Instagram, Facebook, LinkedIn, Cloudinary, Claude and Gemini APIs, so nothing is billed)
 cd frontend && npm test   # API client, session, dates, Instagram rules, platform rules, team permissions, hashtag merge, rewrite diff, analytics maths, time zones and CSV unit tests
 ```
 
