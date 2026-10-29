@@ -4,6 +4,7 @@ import type { PostStatus, TargetStatus } from "../generated/prisma/enums.js";
 import { getAdapter } from "../integrations/registry.js";
 import { PlatformApiError } from "../integrations/types.js";
 import { audit } from "../services/audit.service.js";
+import { refreshAccountToken } from "../services/tokenRefresh.service.js";
 import { deliveryUrl } from "../storage/cloudinary.js";
 import { decryptToken } from "../utils/tokenCrypto.js";
 
@@ -22,6 +23,8 @@ const MAX_PROCESSING_WAIT_MS = 30 * 60_000;
  * missed instead of published: a week-old "sale ends tonight" post shouldn't suddenly appear.
  */
 export const MAX_SCHEDULE_LATENESS_MS = 24 * 3_600_000;
+/** Renew a token that expires within this long before publishing with it (platforms with short-lived access). */
+const REFRESH_BEFORE_PUBLISH_MS = 5 * 60_000;
 
 /** Claims up to `limit` due targets for this worker. */
 export async function claimDueTargets(limit: number, now = new Date()): Promise<string[]> {
@@ -83,8 +86,16 @@ export async function processTarget(targetId: string, now = new Date()): Promise
 
   const adapter = getAdapter(account.platform);
   try {
+    let token = account.token;
+    // X access lasts 2 hours: renew it first if it runs out soon (the hourly job may not have got to it).
+    if (adapter.refreshTokenOutlivesAccessToken && token.expiresAt && token.expiresAt.getTime() < now.getTime() + REFRESH_BEFORE_PUBLISH_MS) {
+      const outcome = await refreshAccountToken(account, now, { unlessValidFor: REFRESH_BEFORE_PUBLISH_MS });
+      if (outcome === "needs_reauth") throw new PlatformApiError(account.platform, "INVALID_TOKEN", "Access couldn't be renewed");
+      if (outcome === "failed") throw new PlatformApiError(account.platform, "UNAVAILABLE", "Couldn't renew access to the account; will try again");
+      token = await prisma.oAuthToken.findUniqueOrThrow({ where: { socialAccountId: account.id } });
+    }
     const result = await adapter.publish({
-      accessToken: decryptToken(account.token.accessTokenEnc),
+      accessToken: decryptToken(token.accessTokenEnc),
       accountExternalId: account.externalId,
       request: {
         format: target.format,

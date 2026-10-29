@@ -11,6 +11,19 @@ export function PlatformIcon({ platform, className = "h-4 w-4" }: { platform: So
       </svg>
     );
   }
+  if (platform === "X") {
+    return (
+      <svg viewBox="0 0 24 24" className={`${className} shrink-0`} aria-hidden>
+        <rect width="24" height="24" rx="5" fill="#000" />
+        {/* The X mark (Simple Icons, CC0), scaled into the square. */}
+        <path
+          transform="translate(5.5 5.5) scale(0.54)"
+          d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"
+          fill="#fff"
+        />
+      </svg>
+    );
+  }
   if (platform === "LINKEDIN") {
     return (
       <svg viewBox="0 0 24 24" className={`${className} shrink-0`} aria-hidden>

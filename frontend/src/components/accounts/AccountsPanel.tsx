@@ -144,7 +144,9 @@ export function AccountsPanel() {
                           ? "Pages you manage. Choose one or more in Facebook's window."
                           : p.platform === "LINKEDIN"
                             ? "Your personal profile. Company Pages aren't supported yet."
-                            : "Coming soon"}
+                            : p.platform === "X"
+                              ? "Your X account. Long posts are published as threads."
+                              : "Coming soon"}
                     </p>
                   </div>
                 </div>

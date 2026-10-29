@@ -247,6 +247,7 @@ describe("connecting Instagram", () => {
       { platform: "INSTAGRAM", displayName: "Instagram", configured: true },
       { platform: "FACEBOOK", displayName: "Facebook", configured: true },
       { platform: "LINKEDIN", displayName: "LinkedIn", configured: true },
+      { platform: "X", displayName: "X", configured: true },
     ]);
 
     const log = await prisma.auditLog.findFirst({ where: { action: "social_account.connected" } });

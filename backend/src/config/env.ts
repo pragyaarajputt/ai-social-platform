@@ -60,6 +60,11 @@ const schema = z.object({
   /** LinkedIn's monthly API version (YYYYMM). Each version is supported for about a year. */
   LINKEDIN_API_VERSION: z.string().regex(/^\d{6}$/).default("202609"),
 
+  // X accounts (OAuth 2.0 with PKCE, as a confidential client). Connecting X is off unless all three are set.
+  X_CLIENT_ID: optional,
+  X_CLIENT_SECRET: optional,
+  X_REDIRECT_URI: optional,
+
   // Cloudinary media storage. Uploading media is off unless all three are set.
   CLOUDINARY_CLOUD_NAME: optional,
   CLOUDINARY_API_KEY: optional,
@@ -185,6 +190,10 @@ export const env = {
           redirectUri: e.LINKEDIN_REDIRECT_URI,
           apiVersion: e.LINKEDIN_API_VERSION,
         }
+      : undefined,
+  x:
+    e.X_CLIENT_ID && e.X_CLIENT_SECRET && e.X_REDIRECT_URI
+      ? { clientId: e.X_CLIENT_ID, clientSecret: e.X_CLIENT_SECRET, redirectUri: e.X_REDIRECT_URI }
       : undefined,
   cloudinary:
     e.CLOUDINARY_CLOUD_NAME && e.CLOUDINARY_API_KEY && e.CLOUDINARY_API_SECRET

@@ -17,6 +17,7 @@ import { accountLabel, CAPTION_MAX, formatFor, formatLabel, platformName, proble
 import { formatDateTime, formatRelative, fromDateTimeLocal, localTimeZone, toDateTimeLocal, useNow } from "@/lib/dates";
 import { createPost, updatePost, uploadMedia, type MediaItem, type Post } from "@/lib/posts";
 import { listSocialAccounts, type SocialAccount } from "@/lib/workspaces";
+import { XThreadPreview } from "./XThreadPreview";
 
 interface Upload {
   key: number;
@@ -93,6 +94,8 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
   const problemsFor = (accountId: string) => platformProblems(platformOf(accountId), overrides[accountId] ?? caption, media);
   // The platforms being posted to (every connected one while nothing is selected), for counters and format.
   const selectedPlatforms = Array.from(new Set((selected.length ? selected : ready.map((a) => a.id)).map(platformOf)));
+  // The X account posted to, whose own caption (if customized) is the one previewed as a thread.
+  const xAccountId = (selected.length ? selected : ready.map((a) => a.id)).find((id) => platformOf(id) === "X");
   const scheduledFor = mode === "schedule" ? fromDateTimeLocal(when) : null;
   // Mirrors the server: only a newly chosen time has to be at least 2 minutes ahead.
   const timeChanged = !editing || when !== initialWhen || mode !== "schedule";
@@ -307,6 +310,7 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
               className="mt-2 w-full rounded-xl border border-neutral-300 bg-transparent p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:border-neutral-700"
             />
             <CaptionCounters text={caption} platforms={selectedPlatforms} />
+            {selectedPlatforms.includes("X") ? <XThreadPreview text={(xAccountId && overrides[xAccountId]) ?? caption} /> : null}
             <AiAssistant
               workspaceId={workspaceId}
               caption={caption}
@@ -482,11 +486,15 @@ export function Composer({ initialPost }: { initialPost?: Post }) {
   );
 }
 
-/** Counts against the strictest selected platform; hashtag and mention limits are Instagram's. */
+/**
+ * Counts against the strictest selected platform; hashtag and mention limits are Instagram's. X isn't
+ * counted here: long text becomes a thread there, which XThreadPreview shows.
+ */
 function CaptionCounters({ text, platforms }: { text: string; platforms: SocialAccount["platform"][] }) {
-  const max = Math.min(...platforms.map((p) => CAPTION_MAX[p] ?? Infinity));
+  const counted = platforms.filter((p) => p !== "X");
+  const max = Math.min(...counted.map((p) => CAPTION_MAX[p] ?? Infinity));
   const items: [string, number, number][] = [
-    ["characters", text.length, Number.isFinite(max) ? max : INSTAGRAM.captionMax],
+    ...(counted.length > 0 ? ([["characters", text.length, Number.isFinite(max) ? max : INSTAGRAM.captionMax]] as [string, number, number][]) : []),
     ...(platforms.includes("INSTAGRAM")
       ? ([
           ["hashtags", countHashtags(text), INSTAGRAM.hashtagMax],

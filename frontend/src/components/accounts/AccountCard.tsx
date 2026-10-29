@@ -47,8 +47,8 @@ export function AccountCard({
   const status = statusLabel[account.status];
   const handle = accountLabel(account);
   const needsAttention = account.status === "NEEDS_REAUTH" || account.status === "REVOKED";
-  // Connected before analytics existed, or the insights permission wasn't granted. LinkedIn has no analytics.
-  const analyticsOff = account.status === "ACTIVE" && !account.insightsAllowed && account.platform !== "LINKEDIN";
+  // Connected before analytics existed, or the insights permission wasn't granted. LinkedIn and X have no analytics.
+  const analyticsOff = account.status === "ACTIVE" && !account.insightsAllowed && account.platform !== "LINKEDIN" && account.platform !== "X";
   // Access that ends unless someone reconnects (LinkedIn): offer to renew it any time.
   const renewable = account.status === "ACTIVE" && !account.tokenRenews && account.tokenExpiresAt !== null;
 

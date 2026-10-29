@@ -4,11 +4,13 @@ import { facebookAdapter } from "./facebook/adapter.js";
 import { instagramAdapter } from "./instagram/adapter.js";
 import { linkedinAdapter } from "./linkedin/adapter.js";
 import type { PlatformAdapter } from "./types.js";
+import { xAdapter } from "./x/adapter.js";
 
 const adapters: Partial<Record<SocialPlatform, PlatformAdapter>> = {
   INSTAGRAM: instagramAdapter,
   FACEBOOK: facebookAdapter,
   LINKEDIN: linkedinAdapter,
+  X: xAdapter,
 };
 
 /** URL segment → platform, e.g. "instagram" → "INSTAGRAM". */

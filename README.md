@@ -2,13 +2,13 @@
 
 [![CI](https://github.com/pragyaarajputt/ai-social-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/pragyaarajputt/ai-social-platform/actions/workflows/ci.yml)
 
-Connect your social accounts (Instagram, Facebook Pages and LinkedIn profiles; Threads, X, YouTube and TikTok planned), write a post once with AI help, and publish or schedule it to every platform from one dashboard.
+Connect your social accounts (Instagram, Facebook Pages, LinkedIn profiles and X; Threads, YouTube and TikTok planned), write a post once with AI help, and publish or schedule it to every platform from one dashboard.
 
 🔗 **Live demo:** [ai-social-platform-nine.vercel.app](https://ai-social-platform-nine.vercel.app)
 
 ![PostDrip walkthrough: dashboard, calendar, connected accounts and analytics](docs/postdrip-demo.gif)
 
-**Status:** Phase 9. Connect Instagram accounts, **Facebook Pages** and **LinkedIn** personal profiles, write once and publish to all of them, upload photos and videos, publish to one or more Instagram accounts (single image, carousel, Reel) **now or on a schedule**, plan posts on a calendar, and write with **AI**: captions in five tones (from an idea and/or the photos), hashtag suggestions, rewrites, and a workspace brand voice. **Analytics**: account reach, views, interactions and followers over time, per-post numbers, top posts (CSV export), and when followers are online.
+**Status:** Phase 9. Connect Instagram accounts, **Facebook Pages**, **LinkedIn** personal profiles and **X** (long posts become threads), write once and publish to all of them, upload photos and videos, publish to one or more Instagram accounts (single image, carousel, Reel) **now or on a schedule**, plan posts on a calendar, and write with **AI**: captions in five tones (from an idea and/or the photos), hashtag suggestions, rewrites, and a workspace brand voice. **Analytics**: account reach, views, interactions and followers over time, per-post numbers, top posts (CSV export), and when followers are online.
 
 > `docs/PRD.md` describes the original social-network idea and is out of date. The product is now a social media management tool.
 
@@ -41,7 +41,7 @@ backend/
     ai/          Claude and Gemini clients behind one provider interface, versioned prompts, pricing
     config/      environment, app config, Prisma client
     generated/   generated Prisma client (gitignored)
-    integrations/ one adapter per social platform (instagram/, facebook/, linkedin/), shared interface in types.ts, Meta HTTP/errors in meta.ts
+    integrations/ one adapter per social platform (instagram/, facebook/, linkedin/, x/), shared interface in types.ts, Meta HTTP/errors in meta.ts
     jobs/        publish queue (claim, publish, retry) and analytics collection
     storage/     Cloudinary client
     controllers/ request handlers
@@ -175,7 +175,7 @@ A workspace always has exactly one owner; ownership only changes through a trans
 
 - **One workspace per account:** a platform account can be active (`ACTIVE` or `NEEDS_REAUTH`) in one workspace at a time, enforced by a partial unique index (`social_accounts_one_active_workspace`). Connecting it elsewhere fails with `error=connected_elsewhere` (the other workspace isn't named); when some of the granted Facebook Pages are taken, the rest connect and the redirect says how many were skipped (`elsewhere=N`). Disconnected or revoked accounts can be connected anywhere.
 - **Daily health check:** the worker makes one cheap call per account per day with its stored token (Instagram profile, Facebook Page). A rejected token or a lost permission or Page role marks the account `NEEDS_REAUTH` (audit `social_account.health_check_failed`), so the pre-flight check warns authors of posts due in the next 24 hours. Outages and rate limits never mark an account broken. The same call keeps names and pictures current; accounts show "Connection checked … ago".
-- **PKCE:** adapters that set `usesPkce` get an S256 code challenge in the consent URL; the verifier stays on the server, encrypted, in the connect state and is deleted when used. Instagram and Facebook don't need it; it's ready for X, TikTok and LinkedIn.
+- **PKCE:** adapters that set `usesPkce` get an S256 code challenge in the consent URL; the verifier stays on the server, encrypted, in the connect state and is deleted when used. X requires it; Instagram, Facebook and LinkedIn don't.
 
 **Rotating the encryption key**
 
@@ -216,6 +216,27 @@ Each selected account is checked against its own platform's rules (Facebook text
 **Never posting twice:** each step's result is saved as it happens. Just before the call that creates the post, a marker is saved. If a retry finds the marker without a result, the worker looks for the post among the Page's recent posts (same text, created since the attempt started); if it isn't there, the post fails with "Couldn't confirm whether Facebook published this post" instead of risking a duplicate, and the user's Retry posts it. A clear error from Facebook clears the marker, so normal retries stay automatic. Reels finish only if Facebook hasn't started publishing them.
 
 **Analytics:** Page insights metrics were cut back on 15 June 2026. Used: `post_media_view` / `post_total_media_view_unique` (views, reach), reactions, comments and shares per post; `page_media_view` / `page_total_media_view_unique` per day; `followers_count`. Not available for Pages: saves, follows/unfollows, and when followers are online.
+
+## X (Twitter)
+
+Connect with **Connect X** on the Accounts page. X uses OAuth 2.0 with **PKCE** (the app is a confidential client, so token calls also send its ID and secret). Scopes: `tweet.read tweet.write users.read media.write offline.access`.
+
+**Setup** (`backend/.env`): `X_CLIENT_ID`, `X_CLIENT_SECRET`, `X_REDIRECT_URI` (`https://<host>/api/v1/integrations/x/callback`, also added as a callback URL in the X Developer Console, app type "Web App"). X bills API use per request (pay-per-use credits), so posting needs credits on the app; a 402 from X fails the post with X's message.
+
+**Threads.** One post is 280 *weighted* characters: emoji, CJK and most non-Latin characters count 2, every URL counts 23 (`backend/src/integrations/x/text.ts`). Longer text is published as a thread of up to 25 posts, each replying to the one before:
+- a line with only `---` starts a new post where the author wants it;
+- anything still too long is split at a paragraph or sentence end (or between words), and each post gets a ` 1/3` counter;
+- photos (up to 4) or one video go on the first post.
+
+The composer shows the exact thread before publishing: the frontend runs a copy of the same splitting code (`frontend/src/lib/xThread.ts`).
+
+**Never posting twice, even halfway through a thread:** each post's ID is saved as soon as X returns it, so after a rate limit the retry carries on with the next post instead of starting over. Just before each post is created a marker is saved; if a retry finds it without a result, the post fails with "Couldn't confirm whether X published post 2 of this thread" rather than risk a duplicate.
+
+**Tokens.** Access lasts 2 hours and every refresh returns a new refresh token, invalidating the old one. The worker refreshes X tokens hourly, publishing renews a token that expires within 5 minutes first, and refreshes of one account are serialized with a Postgres advisory lock, so two refreshes at once can't both spend the same refresh token. An expired access token is still renewed (the refresh token outlives it); only a rejected refresh token asks the user to reconnect.
+
+**Video:** chunked upload (`initialize`, 4 MB `append` chunks read from Cloudinary by byte range, `finalize`), then the worker waits for X to finish processing before posting. MP4, 0.5 s to 20 min, up to 512 MB here.
+
+No analytics for X: X bills every read.
 
 ## Publishing
 
@@ -312,7 +333,7 @@ Post responses include each target's `metrics`.
 ## Tests
 
 ```bash
-cd backend && npm test    # API integration tests (auth, workspaces, team and invites, Instagram, Facebook and LinkedIn connect and publishing, connection safeguards, scheduling, AI (Claude and Gemini), analytics; fake Instagram, Facebook, LinkedIn, Cloudinary, Claude and Gemini APIs, so nothing is billed)
+cd backend && npm test    # API integration tests (auth, workspaces, team and invites, Instagram, Facebook, LinkedIn and X connect and publishing (including X threads and token rotation), connection safeguards, scheduling, AI (Claude and Gemini), analytics; fake Instagram, Facebook, LinkedIn, X, Cloudinary, Claude and Gemini APIs, so nothing is billed)
 cd frontend && npm test   # API client, session, dates, Instagram rules, platform rules, team permissions, hashtag merge, rewrite diff, analytics maths, time zones and CSV unit tests
 ```
 
