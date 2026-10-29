@@ -368,7 +368,12 @@ function NoAnalyticsNote({ platforms }: { platforms: SocialAccount["platform"][]
   return (
     <p className="mt-4 text-sm text-neutral-500">
       {platforms.map(platformName).join(" and ")} {platforms.length === 1 ? "isn't" : "aren't"} shown here:{" "}
-      {platforms.includes("LINKEDIN") ? "LinkedIn only shares statistics for personal profiles with approved partner apps." : "analytics aren't available for it yet."}
+      {[
+        platforms.includes("LINKEDIN") ? "LinkedIn only shares statistics for personal profiles with approved partner apps." : null,
+        platforms.includes("X") ? "X charges for every statistics request, so PostDrip doesn't collect them." : null,
+      ]
+        .filter(Boolean)
+        .join(" ") || "analytics aren't available for it yet."}
     </p>
   );
 }
