@@ -14,8 +14,14 @@ import { AuthCard } from "./AuthCard";
 import { GoogleButton } from "./GoogleButton";
 import { RedirectIfAuthenticated } from "./RequireAuth";
 
+/** Messages for the ?error= the API adds when Google sign-in sends the browser back here. */
 const queryMessages: Record<string, string> = {
   oauth_failed: "Google sign-in didn't work. Try again, or use your email and password.",
+  google_unavailable: "Google sign-in isn't set up on this server yet. Use your email and password.",
+  google_cancelled: "Google sign-in was cancelled. Nothing was changed.",
+  google_expired: "That Google sign-in took too long or was finished in another browser. Please try again.",
+  google_email_taken: "An account with this email already exists, and Google hasn't verified the address. Sign in with your password.",
+  account_disabled: "This account is suspended or deleted.",
 };
 
 export function LoginForm() {
@@ -77,7 +83,7 @@ export function LoginForm() {
           or
           <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-800" />
         </div>
-        <GoogleButton />
+        <GoogleButton next={next} />
       </AuthCard>
     </RedirectIfAuthenticated>
   );

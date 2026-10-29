@@ -112,7 +112,7 @@ All under `/api/v1/auth`. Responses that start a session return `{ user, accessT
 | `POST /resend-verification` | bearer | Max 3 per hour |
 | `POST /forgot-password` | — | `{ email }`. Always returns 200 |
 | `POST /reset-password` | — | `{ token, password }`. Signs out every session |
-| `GET /google` | — | Starts Google sign-in (needs `GOOGLE_*` env vars, otherwise 501) |
+| `GET /google` | — | Starts Google sign-in, which also signs up new people (`?next=/invite/…` returns there afterwards). Needs `GOOGLE_*` env vars; without them, and on any failure, it redirects to `/login?error=<reason>` (`google_unavailable`, `google_cancelled`, `google_expired`, `google_email_taken`, `oauth_failed`) |
 
 Errors always look like `{ "error": { "code": "...", "message": "...", "details": ... } }`.
 
